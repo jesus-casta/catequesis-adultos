@@ -75,7 +75,7 @@ npm run build
 npm run test:local
 ```
 
-Después arranca de nuevo con `npm start`. `npm run build` conserva el flujo de compilación Vinext del proyecto. El script de compilación requiere Bash y GNU `timeout` (en macOS, disponible con GNU coreutils). Si esa utilidad no está instalada, se puede usar directamente la misma compilación:
+Después arranca de nuevo con `npm start`. `npm run build` conserva el flujo de compilación Vinext del proyecto. El script requiere Bash y aplica un límite temporal si encuentra GNU `timeout` o `gtimeout` (en macOS, disponible con GNU coreutils); si no, ejecuta la misma compilación sin ese límite. También se puede invocar directamente:
 
 ```sh
 npx vinext build

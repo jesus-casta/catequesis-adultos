@@ -1,24 +1,25 @@
-# Avance guardado · 28 de agosto de 2026
+# Estado comprobado · 29 de agosto de 2026
 
-El trabajo se ha pausado a petición del usuario para continuar mañana. Este paquete es un punto de recuperación, no una entrega definitiva.
+Primera versión local preparada para revisión, todavía no apta para datos reales ni para producción.
 
 ## Hecho
 
 - Primera aplicación local en Node.js, con interfaz web y datos ficticios.
 - Usuarios y roles; grupos y asignaciones; fichas, fotos y documentos.
 - Guía de uso, decisiones provisionales, arquitectura y cambios.
-- Compilación de producción completada; comprobación de tipos de la aplicación superada.
-- Última ejecución de las pruebas locales: 26 pruebas superadas.
+- Instalación reproducible con `npm ci`, comprobación de tipos y compilación de producción completadas con Node.js 26.7.0.
+- Última ejecución: 26 de 26 pruebas locales y 5 de 5 pruebas del proyecto base superadas.
+- Script de compilación compatible con macOS sin GNU `timeout`; conserva el límite cuando existe `timeout` o `gtimeout`.
+- Resultados, incidencias del entorno y revisión manual pendiente documentados en `docs/PRUEBAS.md`.
 
 ## Pendiente al retomar
 
-- Ejecutar la comprobación conjunta final de las pruebas locales y del proyecto base.
-- Completar `docs/PRUEBAS.md`, referenciado en otros documentos.
 - Verificar el paquete descargable en una carpeta limpia.
 - Revisar juntos la interfaz y confirmar las decisiones provisionales de permisos.
 - Preparar la entrega final y guardarla en la carpeta de Drive del proyecto.
+- Analizar las 21 alertas de dependencias comunicadas por `npm ci` antes de decidir actualizaciones.
 
-No se ha desplegado la aplicación en AWS ni públicamente. No se han cargado datos personales reales. No se han realizado pruebas manuales en un navegador.
+No se ha desplegado la aplicación en AWS ni públicamente. No se han cargado datos personales reales. La revisión funcional manual completa sigue pendiente.
 
 El documento de análisis y diseño de Drive no ha sido modificado durante esta implementación.
 
