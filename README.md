@@ -17,7 +17,7 @@ npm start
 También puedes arrancar sin npm:
 
 ```sh
-node local/server.mjs --demo
+node backend/app.js --demo
 ```
 
 4. Abre [la aplicación local](http://localhost:3000).
@@ -70,18 +70,13 @@ Para modificar la interfaz:
 
 ```sh
 npm ci
-npm run typecheck
 npm run build
-npm run test:local
+npm run test:all
 ```
 
-Después arranca de nuevo con `npm start`. `npm run build` conserva el flujo de compilación Vinext del proyecto. El script requiere Bash y aplica un límite temporal si encuentra GNU `timeout` o `gtimeout` (en macOS, disponible con GNU coreutils); si no, ejecuta la misma compilación sin ese límite. También se puede invocar directamente:
+Después arranca de nuevo con `npm start`. `npm run build` genera el HTML, CSS y JavaScript con Vite, igual que en un proyecto React tradicional.
 
-```sh
-npx vinext build
-```
-
-`npm run dev` conserva el servidor de desarrollo de la interfaz: no inicia la API local. Para revisar esta entrega completa utiliza `npm start` sobre la interfaz compilada. No publiques directamente la salida estática como si incluyese el servidor y sus permisos.
+`npm run dev` inicia solamente la interfaz de desarrollo; para la aplicación completa utiliza `npm start`. Las tareas futuras están en `TODO.txt` y no se muestran dentro de la aplicación.
 
 Más detalle: [arquitectura y API](docs/ARQUITECTURA.md), [pruebas y cobertura](docs/PRUEBAS.md), [registro de versión](docs/CAMBIOS.md).
 

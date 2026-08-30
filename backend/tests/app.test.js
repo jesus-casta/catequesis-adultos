@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createApplication } from '../server.mjs';
-import { DEMO_PASSWORD } from '../store.mjs';
-import { personalData, filePayload } from '../validation.mjs';
+import { createApplication } from '../app.js';
+import { DEMO_PASSWORD } from '../models/store.js';
+import { personalData, filePayload } from '../services/validation.js';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j0WQAAAAASUVORK5CYII=';
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj <</Type /Catalog>> endobj\ntrailer <</Root 1 0 R>>\n%%EOF').toString('base64');

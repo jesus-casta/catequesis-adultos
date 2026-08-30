@@ -6,18 +6,19 @@ La aplicación separa interfaz, permisos y almacenamiento:
 
 | Parte | Ubicación | Responsabilidad |
 | --- | --- | --- |
-| Interfaz React | `app/catequesis-app.tsx` | Listados, ficha, formularios y guía de revisión. |
-| Presentación | `app/globals.css` | Composición adaptable, navegación, tablas y formularios. |
-| Componentes de interfaz | `components/ui` | Primitivas accesibles de diálogos, pestañas, tablas, selección y navegación. |
-| Servidor Node.js | `local/server.mjs` | HTTP, sesiones, autorizaciones, API, CSRF y archivos privados. |
-| Datos | `local/store.mjs` | Esquema SQLite, transacciones, datos ficticios y consultas de permisos. |
-| Validaciones | `local/validation.mjs` | Campos permitidos, tipos, fechas, versiones y formatos de archivos. |
-| Pruebas | `local/tests` | Contratos HTTP, permisos, archivos, persistencia e interfaz compilada. |
+| Interfaz React | `frontend/src/App.jsx` | Listados, ficha, formularios y guía de uso en JavaScript/JSX. |
+| Entrada HTML | `frontend/index.html` | Documento HTML que carga `main.jsx`, como en un proyecto Vite tradicional. |
+| Presentación | `frontend/src/styles.css` | Composición adaptable, navegación, tablas y formularios. |
+| Componentes de interfaz | `frontend/src/components/ui.jsx` | Componentes JSX sencillos reutilizados por las pantallas. |
+| Servidor Node.js | `backend/app.js` | HTTP, sesiones, autorizaciones, API, CSRF y archivos privados. |
+| Modelo | `backend/models/store.js` | SQLite, transacciones, datos ficticios y consultas de permisos. |
+| Servicios | `backend/services/validation.js` | Campos permitidos, fechas, versiones y formatos de archivos. |
+| Pruebas | `backend/tests` | Contratos HTTP, permisos, archivos, persistencia e interfaz compilada. |
 | Interfaz distribuible | `dist/client` | HTML, CSS y JS estáticos servidos por Node; incluido en el ZIP. |
 
 El navegador habla con el mismo origen local. No hay llamadas a AWS, Drive, analítica, fuentes remotas ni servicios externos desde la aplicación. La consulta a Drive solo se utilizó para leer el análisis durante el desarrollo, no es una integración del producto.
 
-El proyecto conserva el compilador Vinext/Vite y la estructura de origen del entorno de creación. Se usa exportación estática para la interfaz, y el backend de esta entrega es Node.js, no un Worker. No se han activado D1/R2 ni una autenticación dependiente de ChatGPT. La salida estática por sí sola no es una aplicación multiusuario segura: necesita la API local.
+Vite compila la interfaz React escrita en JavaScript. El backend es Node.js y SQLite local; no hay Worker ni servicios de despliegue. La salida estática necesita la API para aplicar sesiones y permisos.
 
 ## Modelo de datos
 

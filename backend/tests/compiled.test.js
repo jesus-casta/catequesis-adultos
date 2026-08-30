@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createApplication } from '../server.mjs';
+import { createApplication } from '../app.js';
 
-test('Interfaz compilada: HTML, CSP con nonce, JS, CSS y RSC servidos por Node',async t=>{
+test('Interfaz compilada: HTML, CSP con nonce, JavaScript y CSS servidos por Node',async t=>{
   const staticRoot=fileURLToPath(new URL('../../dist/client/',import.meta.url));
   assert(existsSync(`${staticRoot}/index.html`),'Ejecuta npm run build antes de esta comprobación.');
   const app=createApplication({dbPath:':memory:',demo:true,staticRoot});t.after(()=>app.close());
@@ -16,7 +16,6 @@ test('Interfaz compilada: HTML, CSP con nonce, JS, CSS y RSC servidos por Node',
   for(const script of html.matchAll(/<script\b[^>]*>/g))assert(script[0].includes(`nonce="${nonce}"`));
   const assets=new Set([...html.matchAll(/(?:src|href)="(\/assets\/[^" ]+)"/g)].map(m=>m[1]));assert(assets.size>=2);
   for(const path of assets){const a=await fetch(origin+path);assert.equal(a.status,200,path);assert((await a.arrayBuffer()).byteLength>0);}
-  assert.equal((await fetch(origin+'/index.rsc')).status,200);
   assert.equal((await fetch(origin+'/local-data/catequesis.sqlite')).status,404);
   assert.equal((await fetch(origin+'/api/people')).status,401);
 });

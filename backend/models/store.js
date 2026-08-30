@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, scryptSync, timingSafeEqual, createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { fail, personalData } from './validation.mjs';
+import { fail, personalData } from '../services/validation.js';
 
 export const DEMO_PASSWORD = 'Catequesis-demo-2026!';
 export const hash = value => createHash('sha256').update(value).digest('hex');

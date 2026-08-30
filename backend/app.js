@@ -4,8 +4,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, sep, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openStore, passwordHash, checkPassword, hash, DEMO_PASSWORD } from './store.mjs';
-import { AppError, fail, keys, text, choice, ids, version, personalData, filePayload, ROLES, DAYS, ITINERARIES, DOC_TYPES, OWNER_TYPES } from './validation.mjs';
+import { openStore, passwordHash, checkPassword, hash, DEMO_PASSWORD } from './models/store.js';
+import { AppError, fail, keys, text, choice, ids, version, personalData, filePayload, ROLES, DAYS, ITINERARIES, DOC_TYPES, OWNER_TYPES } from './services/validation.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MIME = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json','.rsc':'text/x-component; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.ico':'image/x-icon','.woff2':'font/woff2','.txt':'text/plain; charset=utf-8'};

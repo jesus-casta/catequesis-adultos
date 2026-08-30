@@ -1,24 +1,22 @@
 # Comprobaciones de la versión local 0.1.0
 
-Última ejecución: 29 de agosto de 2026, con Node.js 26.7.0 y npm 11.19.0 en macOS.
+Última ejecución: 30 de agosto de 2026, con Node.js 26.7.0 y npm 11.19.0 en macOS.
 
 ## Resultado automatizado
 
 | Comprobación | Resultado |
 | --- | --- |
-| `npm ci` | Correcto: 674 paquetes instalados desde `package-lock.json`. npm informó de 21 vulnerabilidades de dependencias (1 baja, 4 moderadas y 16 altas), pendientes de análisis antes de actualizar paquetes. |
-| `npm run typecheck` | Correcto, sin errores de TypeScript. |
-| `npm run build` | Correcto: Vinext compiló los cinco entornos y prerenderizó dos rutas. |
+| `npm ci` | Correcto: instalación reproducible del frontend React/Vite. |
+| `npm run build` | Correcto: Vite generó HTML, CSS y JavaScript. |
 | `npm run test:local` | Correcto: 26 de 26 pruebas superadas. |
-| `node --test tests/*.test.mjs` | Correcto: 5 de 5 pruebas superadas. |
+| `node --test tests/*.test.mjs` | Correcto: 4 de 4 pruebas superadas. |
 
-Las 26 pruebas locales cubren autenticación y sesiones, limitación de intentos, CSRF y origen, permisos por perfil y grupo, administración de usuarios y grupos, traslado y alta mínima de personas, control de versiones, fotos, documentos, duplicados, transacciones, persistencia, validaciones y servicio de la interfaz compilada. Las cinco pruebas del proyecto base comprueban metadatos renderizados y componentes/utilidades de interfaz.
+Las 26 pruebas funcionales cubren autenticación, permisos, personas, grupos, usuarios, archivos, persistencia y seguridad. Las cuatro pruebas del frontend comprueban el HTML, JSX/Vite y la separación de `TODO.txt`.
 
 ## Incidencias del entorno
 
-- La primera compilación no pudo ejecutarse porque macOS no proporciona GNU `timeout`. El script acepta ahora `timeout` o `gtimeout` cuando existen y, si no están disponibles, ejecuta Vinext sin límite temporal.
 - El entorno aislado bloqueó inicialmente los puertos loopback usados por el prerenderizado y por los servidores efímeros de pruebas. La compilación y las pruebas se repitieron con permiso local de red y terminaron correctamente.
-- Vinext mostró un aviso deprecado de Node.js sobre `module.register()`; no impidió compilar ni probar.
+- Vite mostró un aviso deprecado de Node.js sobre `module.register()`; no impidió compilar ni probar.
 
 ## Limitaciones de estas pruebas
 
