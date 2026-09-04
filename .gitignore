@@ -46,6 +46,7 @@ next-env.d.ts
 /outputs/
 /work/
 /local-data/
+/backend/database/private-data/
 /release/
 
 # local databases and temporary files
