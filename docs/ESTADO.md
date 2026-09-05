@@ -1,36 +1,30 @@
-# Estado comprobado · 30 de agosto de 2026
+# Estado de entrega · 6 de septiembre de 2026
 
-Primera versión local preparada para revisión, todavía no apta para datos reales ni para producción.
+## Completado y comprobado localmente
 
-## Hecho
+- Interfaz renovada; usuarios en Visualizadores, Catequistas y Administradores.
+- Combinación Catequista y Admin con una cuenta y ficha; Visualizador exclusivo.
+- Administración con ficha completa, catequista limitado a sus grupos y visualizador global de solo lectura.
+- Fichas flotantes, navegación por listado filtrado, tarjetas de grupos y fichas de catequista.
+- Datos personales, sacramentos, familia, padrinos, contacto, fotos y documentación.
+- Alta y edición, permisos en servidor, CSRF, sesiones, control de versiones y adjuntos.
+- Base de producción vacía, administrador privado, HTTPS tras proxy, cookies Secure, Host/Origin comprobados y endpoint de salud.
+- Copias SQLite consistentes, verificación de integridad y recuperación de contraseña por operador.
+- Configuración lint reparada; dependencias actualizadas con auditoría npm sin vulnerabilidades conocidas en la ejecución del 6 de septiembre.
+- 42 pruebas: 4 frontend/compilación y 38 backend, incluyendo producción y recuperación de copia.
 
-- Primera aplicación local en Node.js, con interfaz web y datos ficticios.
-- Usuarios y roles; grupos y asignaciones; fichas, fotos y documentos.
-- Guía de uso, decisiones provisionales, arquitectura y cambios.
-- Interfaz migrada de TypeScript/Vinext a React con JavaScript/JSX y Vite.
-- Proyecto reorganizado en `frontend` y `backend`, con modelo SQLite y servicios separados.
-- Instalación reproducible con `npm ci` y compilación de producción completadas con Node.js 26.7.0.
-- Última ejecución: 26 de 26 pruebas funcionales y 4 de 4 pruebas del frontend superadas.
-- Las tareas futuras se han centralizado en `TODO.txt` y retirado de la interfaz.
-- Resultados, incidencias del entorno y revisión manual pendiente documentados en `docs/PRUEBAS.md`.
+## Preparado para la próxima sesión
 
-## Pendiente al retomar
+Guía `docs/AWS.md` y plantillas de Nginx, systemd, variables y timer de copias. El paquete de entrega excluye bases locales, credenciales y archivos privados. La cuenta local de Jesús conserva sus permisos.
 
-- Verificar el paquete descargable en una carpeta limpia.
-- Revisar juntos la interfaz y confirmar las decisiones provisionales de permisos.
-- Preparar la entrega final y guardarla en la carpeta de Drive del proyecto.
-- Analizar las 21 alertas de dependencias comunicadas por `npm ci` antes de decidir actualizaciones.
+## A comprobar en AWS
 
-No se ha desplegado la aplicación en AWS ni públicamente. No se han cargado datos personales reales. La revisión funcional manual completa sigue pendiente.
+Instancia/dominio, instalación Linux, certificado y renovación, copia externa, restauración operativa y recorrido manual final con cada perfil. La infraestructura todavía no se ha desplegado. No se ha ejecutado una auditoría de seguridad externa. La validación de formato de adjuntos es básica, no un análisis antivirus.
 
-El documento de análisis y diseño de Drive no ha sido modificado durante esta implementación.
+## Evolución posterior
 
-## Arranque del avance
+Promociones de curso, bajas/borrado y conservación, historial de padrinos y documentos, documentos obligatorios y recuperación automática por correo. No se han inventado reglas para esos procesos. Los módulos MySQL/importación son independientes; no constituyen el almacenamiento de la aplicación web actual.
 
-Con Node.js 24 o posterior, desde la carpeta descomprimida:
+Los demás documentos con fecha de agosto describen entregas históricas; este archivo, README y AWS.md reflejan el estado actual.
 
-```sh
-node backend/app.js --demo
-```
-
-Abrir `http://localhost:3000`. Las cuentas de demostración y sus limitaciones están en `README.md`.
+No había navegador disponible en el entorno de revisión final; la comprobación visual final queda para el recorrido de despliegue. Los recorridos funcionales previos fueron revisados con el usuario durante el desarrollo.

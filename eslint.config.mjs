@@ -1,28 +1,15 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
-
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
+export default [
+  { ignores: ['node_modules/**', 'dist/**', 'vendor/**', '.sites-runtime/**', '.wrangler/**'] },
   {
-    files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
+    files: ['frontend/**/*.{js,jsx}', 'backend/**/*.js', 'tests/**/*.mjs'],
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'module', parserOptions: { ecmaFeatures: { jsx: true } } },
+    linterOptions: { reportUnusedDisableDirectives: 'off' },
     rules: {
-      // These files are vendored verbatim from shadcn@4.17.0. Keep the
-      // registry source intact while applying the stricter rules to Site code.
-      "@typescript-eslint/no-unused-vars": "off",
-      "react-hooks/purity": "off",
-      "react-hooks/set-state-in-effect": "off",
-    },
-  },
-]);
-
-export default eslintConfig;
+      'constructor-super': 'error', 'for-direction': 'error', 'getter-return': 'error',
+      'no-async-promise-executor': 'error', 'no-constant-binary-expression': 'error',
+      'no-dupe-args': 'error', 'no-dupe-keys': 'error', 'no-duplicate-case': 'error',
+      'no-invalid-regexp': 'error', 'no-unexpected-multiline': 'error',
+      'no-unreachable': 'error', 'no-unsafe-finally': 'error', 'valid-typeof': 'error'
+    }
+  }
+];

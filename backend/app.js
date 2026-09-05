@@ -4,15 +4,22 @@ import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, sep, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openStore, passwordHash, checkPassword, hash, DEMO_PASSWORD } from './models/store.js';
+import { openStore, passwordHash, checkPassword, hash } from './models/store.js';
 import { AppError, fail, keys, text, choice, ids, version, personalData, filePayload, ROLES, DAYS, ITINERARIES, DOC_TYPES, OWNER_TYPES } from './services/validation.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MIME = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json','.rsc':'text/x-component; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.ico':'image/x-icon','.woff2':'font/woff2','.txt':'text/plain; charset=utf-8'};
 const SESSION_MS = 8 * 60 * 60 * 1000;
 
-export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesis.sqlite'), demo = false, staticRoot = resolve(ROOT, 'dist/client'), now = Date.now } = {}) {
+export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesis.sqlite'), demo = false, staticRoot = resolve(ROOT, 'dist/client'), now = Date.now, publicOrigin = '', production = false } = {}) {
+  let external;
+  if(publicOrigin) {
+    external=new URL(publicOrigin);
+    if(external.protocol!=='https:' || external.username || external.password || external.pathname!=='/' || external.search || external.hash)throw new Error('CATEQUESIS_PUBLIC_ORIGIN debe ser un origen HTTPS sin ruta.');
+  }
+  if(production && (!external || demo))throw new Error('Producción requiere un origen HTTPS y no admite --demo.');
   const s = openStore(dbPath, demo);
+  if(production && (s.get("SELECT value FROM metadata WHERE key='demo'")?.value!=='false' || s.all('SELECT password_hash FROM users WHERE active=1').some(u=>checkPassword('Catequesis-demo-2026!',u.password_hash)))) {s.db.close();throw new Error('Inicializa una base de producción sin cuentas de ejemplo.');}
   const attempts = new Map();
   const dummyHash = passwordHash('not-a-real-account-password');
   const json = (res, code, body) => { res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(body)); };
@@ -43,20 +50,27 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
       itinerary:choice(b.itinerary,ITINERARIES,'Itinerario'), catechistIds:ids(b.catechistIds)
     };
     if (![out.startTime,out.endTime].every(v=>/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) || out.endTime <= out.startTime) fail(400,'Revisa el horario: la hora final debe ser posterior a la inicial.');
-    for (const id of out.catechistIds) { const u=s.user(id); if (!u?.active || u.role!=='catechist') fail(400,'Solo pueden asignarse catequistas activos.'); }
+    for (const id of out.catechistIds) { const u=s.user(id); if (!u?.active || !(u.role==='catechist'||(u.role==='admin'&&u.is_catechist))) fail(400,'Solo pueden asignarse catequistas activos.'); }
     return out;
   }
-  function userData(b) {
+  function userData(b,old) {
     const username=text(b.username,'Usuario',{required:true,max:80}).toLowerCase();
     if (!/^[a-z0-9][a-z0-9._@-]{2,79}$/.test(username)) fail(400,'Usuario: usa al menos tres letras, números o . _ @ -');
     const role=choice(b.role,ROLES,'Perfil');
     if (typeof b.active !== 'boolean') fail(400,'Estado de cuenta no válido.');
-    const groupIds=ids(b.groupIds); groupIds.forEach(group);
-    if (role==='admin' && groupIds.length) fail(400,'Administración no recibe acceso al contenido de las fichas.');
+    if(b.isCatechist!==undefined && typeof b.isCatechist!=='boolean')fail(400,'Option catequista no válida.');
+    if(role==='reader'&&b.isCatechist===true)fail(400,'Visualizador no se puede combinar con Catequista.');
+    const isCatechist=role==='catechist'||(role==='admin'&&(b.isCatechist??!!old?.is_catechist));
+    const requestedGroups=ids(b.groupIds);
+    const groupIds=role==='reader'?[]:requestedGroups; groupIds.forEach(group);
+    if (role==='admin' && !isCatechist && groupIds.length) fail(400,'Administración tiene acceso a todos los grupos y no necesita asignaciones.');
     const name=text(b.name,'Nombre',{required:true});
     const password=text(b.password ?? '', 'Contraseña',{max:128});
     if (password && password.length<12) fail(400,'La contraseña debe tener al menos 12 caracteres.');
-    return {username,role,active:b.active,groupIds,name,password};
+    const phone=b.phone===undefined?undefined:text(b.phone,'Teléfono',{max:40});
+    const email=b.email===undefined?undefined:text(b.email,'Correo electrónico',{max:160});
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400,'Introduce un correo electrónico válido.');
+    return {username,role,active:b.active,groupIds,name,password,phone,email,isCatechist};
   }
   function current(req, csrf = false) {
     const a=auth(req);
@@ -65,6 +79,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
   }
   const server=createServer(async(req,res)=>{
     res.setHeader('Cache-Control','no-store');
+    if(external)res.setHeader('Strict-Transport-Security','max-age=31536000');
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Referrer-Policy','no-referrer');
     res.setHeader('X-Frame-Options','DENY');
@@ -73,18 +88,20 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     res.setHeader('Content-Security-Policy',`default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`);
     try {
       const port=server.address()?.port;
-      if (![ `localhost:${port}`,`127.0.0.1:${port}` ].includes(req.headers.host)) fail(421,'Esta versión solo admite acceso local.');
+      if (!(external?[external.host]:[`localhost:${port}`,`127.0.0.1:${port}`]).includes(req.headers.host)) fail(421,'Host no autorizado.');
       const url=new URL(req.url,`http://${req.headers.host}`), path=url.pathname;
       const method=req.method;
       const write=!['GET','HEAD','OPTIONS'].includes(method);
-      if (write && req.headers.origin && req.headers.origin!==url.origin) fail(403,'Origen de la solicitud no autorizado.');
+      if (write && req.headers.origin && req.headers.origin!==(external?.origin??url.origin)) fail(403,'Origen de la solicitud no autorizado.');
       if (req.headers['sec-fetch-site']==='cross-site') fail(403,'No se admite acceso desde otro sitio.');
-      if (path==='/api/meta' && method==='GET') return json(res,200,{version:'0.1.0',demo:true,localOnly:true,photoLimitMB:2,documentLimitMB:5});
+      if(path==='/healthz'&&method==='GET'){s.get('SELECT 1');return json(res,200,{ok:true});}
+      if (path==='/api/meta' && method==='GET') return json(res,200,{version:'0.1.0',demo:s.get("SELECT value FROM metadata WHERE key='demo'")?.value==='true',localOnly:!external,photoLimitMB:2,documentLimitMB:5});
       if (path==='/api/login' && method==='POST') {
         const b=await body(req,path); keys(b,['username','password']);
         const username=text(b.username,'Usuario',{max:80}).toLowerCase();
         const password=text(b.password,'Contraseña',{max:128});
-        const ip=req.socket.remoteAddress;
+        for(const [key,value] of attempts)if(value.until<=now())attempts.delete(key);
+        const ip=`${req.socket.remoteAddress}:${username}`;
         const attempt=attempts.get(ip);
         if (attempt && attempt.until>now() && attempt.count>=8) fail(429,'Demasiados intentos. Espera cinco minutos.');
         const user=s.get('SELECT * FROM users WHERE username=?',username);
@@ -98,7 +115,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         const token=randomBytes(32).toString('hex'), csrf=randomBytes(24).toString('hex');
         s.run('DELETE FROM sessions WHERE expires <= ?',now());
         s.run('INSERT INTO sessions VALUES (?,?,?,?)',hash(token),user.id,csrf,now()+SESSION_MS);
-        res.setHeader('Set-Cookie',`catequesis_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS/1000}`);
+        res.setHeader('Set-Cookie',`catequesis_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS/1000}${external?'; Secure':''}`);
         return json(res,200,{user:s.publicUser(user),csrf});
       }
       if (path.startsWith('/api/')) {
@@ -115,19 +132,19 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           const gs=s.all('SELECT * FROM groups ORDER BY name').filter(g=>user.role==='admin'||s.canRead(user,g.id));
           return json(res,200,gs.map(g=>({id:g.id,name:g.name,parish:g.parish,day:g.day,startTime:g.start_time,endTime:g.end_time,itinerary:g.itinerary,version:g.version,
             count:s.get('SELECT COUNT(*) AS n FROM people WHERE group_id=?',g.id).n,
-            catechists:s.all("SELECT u.id,u.name FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND u.role='catechist' AND u.active=1 ORDER BY u.name",g.id)})));
+            catechists:s.all("SELECT u.id,u.name,u.phone,u.email,u.version,EXISTS(SELECT 1 FROM user_photos up WHERE up.user_id=u.id) AS hasPhoto FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1 ORDER BY u.name",g.id)})));
         }
         const groupMatch=path.match(/^\/api\/groups\/([^/]+)$/);
         if ((path==='/api/groups'&&method==='POST') || (groupMatch&&method==='PUT')) {
           admin(user); keys(b,['name','parish','day','startTime','endTime','itinerary','catechistIds','version']);
           const g=groupData(b), id=groupMatch?.[1] ?? randomUUID();
           s.transaction(()=>{
-            const previous=s.all("SELECT sc.user_id FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND u.role='catechist'",id).map(r=>r.user_id);
+            const previous=s.all("SELECT sc.user_id FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1))",id).map(r=>r.user_id);
             if (groupMatch) {
               const old=group(id); version(b.version,old);
               if (old.itinerary!==g.itinerary && s.get('SELECT 1 FROM people WHERE group_id=?',id)) fail(409,'El cambio de itinerario de un grupo con personas está pendiente de definir.');
               s.run('UPDATE groups SET name=?,parish=?,day=?,start_time=?,end_time=?,itinerary=?,version=version+1 WHERE id=?',g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,id);
-              s.run("DELETE FROM scopes WHERE group_id=? AND user_id IN (SELECT id FROM users WHERE role='catechist')",id);
+              s.run("DELETE FROM scopes WHERE group_id=? AND user_id IN (SELECT id FROM users WHERE role='catechist' OR (role='admin' AND is_catechist=1))",id);
             } else s.run('INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary) VALUES (?,?,?,?,?,?,?)',id,g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary);
             for (const u of g.catechistIds) s.run('INSERT OR IGNORE INTO scopes VALUES (?,?)',u,id);
             for (const uid of new Set([...previous,...g.catechistIds])) s.run('UPDATE users SET version=version+1 WHERE id=?',uid);
@@ -136,10 +153,29 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           return json(res,groupMatch?200:201,{id});
         }
         if (path==='/api/users'&&method==='GET') { admin(user); return json(res,200,s.all('SELECT * FROM users ORDER BY name').map(u=>s.publicUser(u))); }
+        const userPhoto=path.match(/^\/api\/users\/([^/]+)\/photo$/);
+        if(userPhoto && ['GET','POST'].includes(method)) {
+          const target=s.user(userPhoto[1]);
+          if(!target || !(target.role==='catechist'||(target.role==='admin'&&target.is_catechist)))fail(404,'Catequista no disponible.');
+          if(method==='POST') {
+            admin(user);keys(b,['name','base64','version']);version(b.version,target);
+            const file=filePayload(b,true);
+            s.transaction(()=>{
+              s.run('INSERT INTO user_photos (user_id,mime,bytes) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET mime=excluded.mime,bytes=excluded.bytes',target.id,file.mime,file.bytes);
+              s.run('UPDATE users SET version=version+1 WHERE id=?',target.id);
+              s.audit(user.id,'catechist.photo.upload',target.id);
+            });return json(res,201,{ok:true});
+          }
+          if(user.role!=='admin' && user.role!=='reader' && !s.all('SELECT group_id FROM scopes WHERE user_id=?',target.id).some(g=>s.canRead(user,g.group_id)))fail(404,'Foto no disponible.');
+          const photo=s.get('SELECT * FROM user_photos WHERE user_id=?',target.id);
+          if(!photo)fail(404,'Foto no disponible.');
+          res.setHeader('Content-Security-Policy',"sandbox; default-src 'none';");
+          res.writeHead(200,{'Content-Type':photo.mime,'Content-Length':photo.bytes.length});return res.end(Buffer.from(photo.bytes));
+        }
         const userMatch=path.match(/^\/api\/users\/([^/]+)$/);
         if ((path==='/api/users'&&method==='POST')||(userMatch&&method==='PUT')) {
-          admin(user); keys(b,['username','name','role','active','password','groupIds','version']);
-          const d=userData(b), id=userMatch?.[1]??randomUUID();
+          admin(user); keys(b,['username','name','role','active','password','groupIds','version','phone','email','isCatechist']);
+          const d=userData(b,userMatch?s.user(userMatch[1]):null), id=userMatch?.[1]??randomUUID();
           if (!userMatch&&!d.password) fail(400,'Introduce una contraseña inicial de al menos 12 caracteres.');
           const duplicate=s.get('SELECT id FROM users WHERE username=?',d.username);
           if (duplicate&&duplicate.id!==id) fail(409,'Ese nombre de usuario ya existe.');
@@ -151,6 +187,8 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
               if(old.role!==d.role || !d.active || d.password) s.run('DELETE FROM sessions WHERE user_id=?',id);
               s.run('DELETE FROM scopes WHERE user_id=?',id);
             } else s.run('INSERT INTO users (id,username,name,role,active,password_hash) VALUES (?,?,?,?,?,?)',id,d.username,d.name,d.role,Number(d.active),passwordHash(d.password));
+            s.run('UPDATE users SET is_catechist=? WHERE id=?',Number(d.isCatechist),id);
+            s.run('UPDATE users SET phone=COALESCE(?,phone),email=COALESCE(?,email) WHERE id=?',d.phone??null,d.email??null,id);
             for(const g of d.groupIds) s.run('INSERT INTO scopes VALUES (?,?)',id,g);
             for(const gid of new Set([...previousGroups,...d.groupIds])) s.run('UPDATE groups SET version=version+1 WHERE id=?',gid);
             if(!s.get("SELECT 1 FROM users WHERE role='admin' AND active=1")) fail(409,'Debe mantenerse al menos una cuenta administradora activa.');
@@ -160,7 +198,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         if(path==='/api/people'&&method==='GET') {
           const ps=s.all('SELECT * FROM people ORDER BY last_name,first_name').filter(p=>user.role==='admin'||s.canRead(user,p.group_id));
-          return json(res,200,ps.map(p=>s.presentPerson(p,user.role==='admin')));
+          return json(res,200,ps.map(p=>s.presentPerson(p)));
         }
         if(path==='/api/people'&&method==='POST') {
           admin(user);keys(b,['firstName','lastName','groupId','allowDuplicate']);
@@ -191,7 +229,9 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         const upload=path.match(/^\/api\/people\/([^/]+)\/(photo|documents)$/);
         if(upload&&method==='POST') {
-          const p=s.person(user,upload[1],true), photo=upload[2]==='photo';
+          const photo=upload[2]==='photo';
+          const p=photo&&user.role==='admin'?s.get('SELECT * FROM people WHERE id=?',upload[1]):s.person(user,upload[1],true);
+          if(!p)fail(404,'Ficha no disponible.');
           keys(b,photo?['name','base64','version']:['name','base64','type','owner','version']);version(b.version,p);
           const file=filePayload(b,photo),type=photo?'photo':choice(b.type,DOC_TYPES,'Tipo de documento');
           const owner=photo?'participant':choice(b.owner,OWNER_TYPES,'Titular');
@@ -209,7 +249,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         const fileMatch=path.match(/^\/api\/files\/([^/]+)$/);
         if(fileMatch&&method==='GET') {
-          const f=s.get('SELECT * FROM files WHERE id=?',fileMatch[1]);if(!f)fail(404,'Archivo no disponible.');s.person(user,f.person_id);
+          const f=s.get('SELECT * FROM files WHERE id=?',fileMatch[1]);if(!f)fail(404,'Archivo no disponible.');if(!(user.role==='admin'&&f.type==='photo'))s.person(user,f.person_id);
           res.setHeader('Content-Security-Policy',"sandbox; default-src 'none';");
           res.setHeader('Content-Disposition',`inline; filename="documento${f.mime==='application/pdf'?'.pdf':f.mime==='image/png'?'.png':'.jpg'}"; filename*=UTF-8''${encodeURIComponent(f.name).replace(/'/g,'%27')}`);
           res.writeHead(200,{'Content-Type':f.mime,'Content-Length':f.size});return res.end(Buffer.from(f.bytes));
@@ -242,9 +282,12 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('CATEQUESIS_PORT debe estar entre 1024 y 65535.');
   const staticRoot=resolve(ROOT,'dist/client');
   if(!existsSync(resolve(staticRoot,'index.html')))throw new Error('Falta la interfaz compilada. Consulta README.md antes de arrancar.');
-  const app=createApplication({demo,staticRoot});
-  app.server.listen(port,'127.0.0.1',()=>{
-    console.log(`Catequesis de adultos · demostración local\nAbre http://localhost:${port}\nSolo datos ficticios. No exponer a Internet.\nUsuarios: admin / ana / luis / consulta\nContraseña de las cuentas de ejemplo: ${DEMO_PASSWORD}`);
+  const production=process.env.NODE_ENV==='production';
+  const host=process.env.CATEQUESIS_HOST??'127.0.0.1';
+  if(!production && !['127.0.0.1','localhost'].includes(host))throw new Error('El modo local solo puede escuchar en loopback.');
+  const app=createApplication({demo,staticRoot,production,publicOrigin:process.env.CATEQUESIS_PUBLIC_ORIGIN??'',dbPath:process.env.CATEQUESIS_DB_PATH?resolve(process.env.CATEQUESIS_DB_PATH):resolve(ROOT,'local-data/catequesis.sqlite')});
+  app.server.listen(port,host,()=>{
+    console.log(`Catequesis de adultos · ${production?'producción':'local'}\nAbre ${process.env.CATEQUESIS_PUBLIC_ORIGIN??`http://localhost:${port}`}`);
   });
   app.server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'El puerto está ocupado. Elige otro con CATEQUESIS_PORT.':error.message);app.store.db.close();process.exitCode=1;});
   for(const signal of ['SIGINT','SIGTERM'])process.once(signal,async()=>{await app.close();process.exit(0);});

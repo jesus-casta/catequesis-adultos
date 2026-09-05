@@ -55,21 +55,23 @@ spec('Seguridad: origen ajeno, CSRF y Host no autorizado',async({req,login,origi
   const hostStatus=await new Promise((ok,no)=>{const r=httpRequest(`${origin}/api/meta`,{headers:{Host:'otro.example'}},res=>{res.resume();ok(res.statusCode);});r.on('error',no);r.end();});
   assert.equal(hostStatus,421);
 });
-spec('CU-07: Ana no ve segundo; consulta solo ve confirmación',async({req,login})=>{
+spec('CU-07: catequista limitado a sus grupos y visitante con consulta global',async({req,login})=>{
   const a=await login('ana'),r=await login('consulta');
   const ps=(await req('/api/people',{auth:a})).value;assert.equal(ps.length,5);assert(!ps.some(p=>p.groupId==='g-second'));
   assert.equal((await req('/api/people/p-6',{auth:a})).status,404);
-  assert.equal((await req('/api/people',{auth:r})).value.length,3);
-  assert.equal((await req('/api/people/p-4',{auth:r})).status,404);
+  assert.equal((await req('/api/people',{auth:r})).value.length,7);
+  assert.equal((await req('/api/groups',{auth:r})).value.length,3);
+  assert.equal((await req('/api/people/p-4',{auth:r})).status,200);
+  assert.equal((await req('/api/people/p-6/photo',{auth:a,method:'POST',data:{name:'foto.png',base64:PNG,version:1}})).status,404);
 });
-spec('Administración solo recibe datos mínimos, nunca fichas ampliadas',async({req,login})=>{
+spec('Administración recibe fichas completas',async({req,login})=>{
   const auth=await login('admin');const ps=(await req('/api/people',{auth})).value;assert.equal(ps.length,7);
-  assert.deepEqual(Object.keys(ps[0]).sort(),['firstName','groupId','id','lastName','version']);
-  assert.equal((await req('/api/people/p-1',{auth})).status,404);
+  assert(ps[0].data);assert(Array.isArray(ps[0].documents));
+  assert.equal((await req('/api/people/p-1',{auth})).status,200);
 });
 spec('CU-02: altas de cuenta, sin grupo no hay fichas; duplicado rechazado',async({req,login})=>{
   const auth=await login('admin');
-  const data={username:'nueva',name:'Nueva prueba',role:'reader',active:true,password:DEMO_PASSWORD,groupIds:[]};
+  const data={username:'nueva',name:'Nueva prueba',role:'catechist',active:true,password:DEMO_PASSWORD,groupIds:[]};
   assert.equal((await req('/api/users',{method:'POST',auth,data})).status,201);
   const newcomer=await login('nueva');assert.deepEqual((await req('/api/people',{auth:newcomer})).value,[]);
   assert.equal((await req('/api/users',{method:'POST',auth,data})).status,409);
@@ -145,7 +147,7 @@ spec('CU-09: subir foto y proteger su acceso',async({req,login})=>{
   const r=await req('/api/people/p-1/photo',{method:'POST',auth:a,data:{name:'foto.png',base64:PNG,version:1}});assert.equal(r.status,201,JSON.stringify(r.value));
   assert.equal((await req('/api/people/p-1',{auth:a})).value.photoId,r.value.id);
   const f=await req(`/api/files/${r.value.id}`,{auth:a});assert.equal(f.headers.get('content-type'),'image/png');assert.equal(f.headers.get('cache-control'),'no-store');
-  assert.equal((await req(`/api/files/${r.value.id}`,{auth:admin})).status,404);
+  assert.equal((await req(`/api/files/${r.value.id}`,{auth:admin})).status,200);
   assert.equal((await req(`/api/files/${r.value.id}`)).status,401);
 });
 spec('CU-09: SVG, HTML renombrado y foto de tamaño excesivo se rechazan',async({req,login})=>{
@@ -202,4 +204,108 @@ test('Validaciones: no equivale a desconocido y fechas imposibles rechazadas',()
   assert.equal(personalData({}).baptism,'unknown');assert.equal(personalData({baptism:'no'}).baptism,'no');
   assert.throws(()=>personalData({birthDate:'2025-02-30'}),/fecha/);
   assert.throws(()=>personalData({role:'admin'}),/no permitidos/);
+});
+
+spec('Contacto de catequistas: guardar, consultar por grupo y conservar campos omitidos',async({req,login})=>{
+  const auth=await login('admin');
+  let users=(await req('/api/users',{auth})).value;
+  let ana=users.find(u=>u.username==='ana');
+  const contact={phone:'+34 600 123 456',email:'catequista@example.org'};
+  assert.equal((await req(`/api/users/${ana.id}`,{auth,method:'PUT',data:updateUser(ana,contact)})).status,200);
+  ana=(await req('/api/users',{auth})).value.find(u=>u.id===ana.id);
+  assert.equal(ana.phone,contact.phone);assert.equal(ana.email,contact.email);
+  assert.equal((await req(`/api/users/${ana.id}`,{auth,method:'PUT',data:updateUser(ana)})).status,200);
+  const catechist=await login('ana');
+  const groups=(await req('/api/groups',{auth:catechist})).value;
+  const shown=groups.flatMap(g=>g.catechists).find(u=>u.id===ana.id);
+  assert.equal(shown.email,contact.email);assert.equal(shown.phone,contact.phone);
+  assert.equal(shown.password_hash,undefined);
+  assert.equal((await req('/api/users',{auth:catechist})).status,403);
+  ana=(await req('/api/users',{auth})).value.find(u=>u.id===ana.id);
+  assert.equal((await req(`/api/users/${ana.id}`,{auth,method:'PUT',data:updateUser(ana,{email:'incorrecto'})})).status,400);
+});
+
+spec('Fotos de catequista: administración guarda, ámbito limita consulta y versión evita sobrescrituras',async({req,login})=>{
+  const auth=await login('admin');
+  const ana=(await req('/api/users',{auth})).value.find(u=>u.username==='ana');
+  const path=`/api/users/${ana.id}/photo`;
+  const payload={name:'foto.png',base64:PNG,version:ana.version};
+  assert.equal((await req(path,{method:'POST',auth,data:{...payload,base64:PDF}})).status,400);
+  assert.equal((await req(path,{method:'POST',auth,data:payload})).status,201);
+  assert.equal((await req(path,{method:'POST',auth,data:payload})).status,409);
+  const updated=(await req('/api/users',{auth})).value.find(u=>u.id===ana.id);
+  assert.equal(updated.hasPhoto,true);
+  const photo=await req(path,{auth});assert.equal(photo.status,200);assert.equal(photo.value.toString('base64'),PNG);
+  const catechist=await login('ana');
+  assert.equal((await req(path,{auth:catechist})).status,200);
+  assert.equal((await req(path,{method:'POST',auth:catechist,data:payload})).status,403);
+  assert.equal((await req(path)).status,401);
+  assert.equal((await req('/api/users',{auth,method:'POST',data:{username:'sinambito',name:'Sin ámbito',role:'reader',active:true,password:DEMO_PASSWORD,groupIds:[]}})).status,201);
+  const reader=await login('sinambito');
+  assert.equal((await req(path,{auth:reader})).status,200);
+});
+spec('Administración sube foto de catecúmeno y recibe datos completos',async({req,login})=>{
+  const auth=await login('admin');
+  const payload={name:'foto.png',base64:PNG,version:1};
+  const result=await req('/api/people/p-1/photo',{auth,method:'POST',data:payload});assert.equal(result.status,201);
+  const person=(await req('/api/people',{auth})).value.find(p=>p.id==='p-1');assert.equal(person.photoId,result.value.id);assert(person.data);
+  assert.equal((await req(`/api/files/${result.value.id}`,{auth})).status,200);
+  assert.equal((await req('/api/people/p-1/documents',{auth,method:'POST',data:{...payload,version:person.version}})).status,400);
+});
+
+spec('Visitante consulta también grupos nuevos y sus documentos sin poder modificarlos',async({req,login})=>{
+  const auth=await login('admin'),visitor=await login('consulta'),catechist=await login('ana');
+  const base=(await req('/api/groups',{auth})).value[0];
+  const created=await req('/api/groups',{auth,method:'POST',data:{...updateGroup(base),name:'Grupo nuevo',catechistIds:['u-ana']}});
+  assert.equal(created.status,201);
+  assert((await req('/api/groups',{auth:visitor})).value.some(g=>g.id===created.value.id));
+  const person=await req('/api/people',{auth,method:'POST',data:{firstName:'Nueva',lastName:'Persona',groupId:created.value.id}});assert.equal(person.status,201);
+  const path=`/api/people/${person.value.id}`;
+  assert.equal((await req(path,{auth:visitor})).status,200);
+  const upload={name:'documento.pdf',base64:PDF,type:'birth',owner:'participant',version:1};
+  const file=await req(`${path}/documents`,{auth:catechist,method:'POST',data:upload});assert.equal(file.status,201);
+  assert.equal((await req(`/api/files/${file.value.id}`,{auth:visitor})).status,200);
+  assert.equal((await req(`${path}/documents`,{auth:visitor,method:'POST',data:upload})).status,403);
+  assert.equal((await req(`${path}/photo`,{auth:visitor,method:'POST',data:{name:'foto.png',base64:PNG,version:2}})).status,403);
+  assert.equal((await req('/api/groups',{auth:visitor,method:'POST',data:updateGroup(base)})).status,403);
+});
+
+spec('Administración edita datos personales, sacramentales y familiares y adjunta documentos',async({req,login})=>{
+  const auth=await login('admin');
+  let p=(await req('/api/people/p-6',{auth})).value;
+  const result=await req('/api/people/p-6',{auth,method:'PUT',data:updatePerson(p,{phone:'600123456',email:'persona@example.org',father:'Padre',confirmation:'yes'})});assert.equal(result.status,200);
+  p=(await req('/api/people/p-6',{auth})).value;
+  assert.equal(p.data.email,'persona@example.org');assert.equal(p.data.father,'Padre');assert.equal(p.data.confirmation,'yes');
+  const file=await req('/api/people/p-6/documents',{auth,method:'POST',data:{name:'certificado.pdf',base64:PDF,type:'birth',owner:'participant',version:p.version}});assert.equal(file.status,201);
+  assert.equal((await req(`/api/files/${file.value.id}`,{auth})).status,200);
+  assert((await req('/api/people/p-6',{auth})).value.documents.some(d=>d.id===file.value.id));
+});
+
+spec('Administrador también catequista: ficha, foto, asignación y protección del último catequista',async({req,login})=>{
+  const auth=await login('admin');
+  let adminUser=(await req('/api/users',{auth})).value.find(u=>u.username==='admin');
+  assert.equal((await req(`/api/users/${adminUser.id}`,{auth,method:'PUT',data:updateUser(adminUser,{isCatechist:true,groupIds:['g-conf']})})).status,200);
+  adminUser=(await req('/api/users',{auth})).value.find(u=>u.id===adminUser.id);
+  assert.equal(adminUser.role,'admin');assert.equal(adminUser.isCatechist,true);
+  let group=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
+  assert(group.catechists.some(u=>u.id===adminUser.id));
+  assert.equal((await req('/api/groups/g-conf',{auth,method:'PUT',data:updateGroup(group,{catechistIds:[adminUser.id]})})).status,200);
+  adminUser=(await req('/api/users',{auth})).value.find(u=>u.id===adminUser.id);
+  assert.equal((await req(`/api/users/${adminUser.id}/photo`,{auth,method:'POST',data:{name:'foto.png',base64:PNG,version:adminUser.version}})).status,201);
+  assert.equal((await req(`/api/users/${adminUser.id}/photo`,{auth})).status,200);
+  adminUser=(await req('/api/users',{auth})).value.find(u=>u.id===adminUser.id);
+  assert.equal((await req(`/api/users/${adminUser.id}`,{auth,method:'PUT',data:updateUser(adminUser,{isCatechist:false,groupIds:[]})})).status,409);
+  assert.equal((await req('/api/people/p-6',{auth})).status,200);
+  group=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
+  assert.equal((await req('/api/groups/g-conf',{auth,method:'PUT',data:updateGroup(group,{catechistIds:['u-ana']})})).status,200);
+  group=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
+  assert(!group.catechists.some(u=>u.id===adminUser.id));
+});
+
+spec('Visualizador es exclusivo: se rechaza combinarlo con catequista',async({req,login})=>{
+ const auth=await login('admin');
+ const reader=(await req('/api/users',{auth})).value.find(u=>u.role==='reader');
+ assert.equal((await req(`/api/users/${reader.id}`,{auth,method:'PUT',data:updateUser(reader,{isCatechist:true})})).status,400);
+ const saved=(await req('/api/users',{auth})).value.find(u=>u.id===reader.id);
+ assert.equal(saved.role,'reader');assert.equal(saved.isCatechist,false);
 });

@@ -1,14 +1,15 @@
 CATEQUESIS DE ADULTOS · TAREAS PENDIENTES
 
-- Separar `backend/app.js` en controladores, rutas y middleware cuando se adopte Express; por ahora conserva el servidor HTTP probado.
-- Confirmar quién crea las fichas y quién completa sus datos.
-- Confirmar si el arzobispado consulta todos los grupos o solo los asignados.
-- Confirmar la organización de primero y segundo como grupos separados.
-- Definir los documentos obligatorios para participantes y padrinos.
-- Definir el historial y la conservación al cambiar de grupo, curso o padrino.
-- Diseñar la importación del Excel cuando exista un ejemplo anonimizado.
-- Definir bajas, borrado, recuperación y política de conservación.
-- Definir promociones de curso y finalización del itinerario.
-- Añadir recuperación de contraseña antes de un uso real.
-- Revisar privacidad, accesibilidad, copias de seguridad y seguridad antes de usar datos reales.
-- Analizar las alertas de dependencias antes de actualizar paquetes.
+PRÓXIMA SESIÓN · AWS
+- Elegir cuenta/región, instancia y dominio; seguir docs/AWS.md.
+- Configurar HTTPS, renovación del certificado y firewall.
+- Inicializar base vacía y credenciales privadas, sin importar la demo.
+- Configurar copia externa y retención; probar restauración y monitorización.
+- Validar en Linux los servicios y el recorrido completo con los tres perfiles.
+
+EVOLUCIÓN POSTERIOR
+- Promociones de curso y finalización del itinerario.
+- Bajas, borrado y reglas de conservación.
+- Historial de padrinos y documentos obligatorios por itinerario.
+- Recuperación automática de contraseña por correo.
+- Integración de importación/MySQL si se decide sustituir SQLite.

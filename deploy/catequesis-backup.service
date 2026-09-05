@@ -1,0 +1,15 @@
+[Unit]
+Description=Copia verificada de Catequesis
+[Service]
+Type=oneshot
+User=catequesis
+Group=catequesis
+WorkingDirectory=/opt/catequesis
+EnvironmentFile=/etc/catequesis.env
+ExecStart=/usr/bin/node /opt/catequesis/backend/scripts/backup.js
+Environment=CATEQUESIS_BACKUP_DIR=/var/lib/catequesis/backups
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/catequesis

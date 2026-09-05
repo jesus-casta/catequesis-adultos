@@ -14,7 +14,7 @@ export function checkPassword(password, encoded) {
   const actual = scryptSync(password, salt, 64);
   return timingSafeEqual(actual, Buffer.from(expected, 'hex'));
 }
-export function openStore(path, demo) {
+export function openStore(path, demo, bootstrap) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(path);
   if (path !== ':memory:') chmodSync(path, 0o600);
@@ -31,6 +31,9 @@ export function openStore(path, demo) {
     CREATE TABLE IF NOT EXISTS groups (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, parish TEXT NOT NULL, day TEXT NOT NULL,
       start_time TEXT NOT NULL, end_time TEXT NOT NULL, itinerary TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS user_photos (
+      user_id TEXT PRIMARY KEY REFERENCES users(id), mime TEXT NOT NULL, bytes BLOB NOT NULL
     );
     CREATE TABLE IF NOT EXISTS scopes (
       user_id TEXT NOT NULL REFERENCES users(id), group_id TEXT NOT NULL REFERENCES groups(id),
@@ -56,6 +59,12 @@ export function openStore(path, demo) {
       id TEXT PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, entity_id TEXT NOT NULL, created_at TEXT NOT NULL
     );
   `);
+  // Add contact fields to existing databases without replacing their records.
+  const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(column => column.name));
+  for (const column of ['phone', 'email']) {
+    if (!userColumns.has(column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!userColumns.has('is_catechist')) db.exec('ALTER TABLE users ADD COLUMN is_catechist INTEGER NOT NULL DEFAULT 0');
   const store = {
     db,
     get(sql, ...params) { return db.prepare(sql).get(...params); },
@@ -68,28 +77,36 @@ export function openStore(path, demo) {
     },
     audit(actor, action, entity) { this.run('INSERT INTO audit VALUES (?, ?, ?, ?, ?)', randomUUID(), actor, action, entity, new Date().toISOString()); },
     user(id) { return this.get('SELECT * FROM users WHERE id = ?', id); },
-    publicUser(u) { return { id:u.id, username:u.username, name:u.name, role:u.role, active:!!u.active, version:u.version, groupIds:this.all('SELECT group_id FROM scopes WHERE user_id = ?',u.id).map(g=>g.group_id) }; },
-    canRead(u, groupId) { return u.role !== 'admin' && !!this.get('SELECT 1 FROM scopes WHERE user_id = ? AND group_id = ?',u.id,groupId); },
+    publicUser(u) { return { id:u.id, username:u.username, name:u.name, phone:u.phone, email:u.email, hasPhoto:!!this.get('SELECT 1 FROM user_photos WHERE user_id=?',u.id), role:u.role, isCatechist:u.role==='catechist'||(u.role==='admin'&&!!u.is_catechist), active:!!u.active, version:u.version, groupIds:this.all('SELECT group_id FROM scopes WHERE user_id = ?',u.id).map(g=>g.group_id) }; },
+    canRead(u, groupId) { return u.role === 'admin' || u.role === 'reader' || (u.role === 'catechist' && !!this.get('SELECT 1 FROM scopes WHERE user_id = ? AND group_id = ?',u.id,groupId)); },
     person(u, id, edit = false) {
       const p = this.get('SELECT * FROM people WHERE id = ?', id);
       if (!p || !this.canRead(u, p.group_id)) fail(404, 'Ficha no disponible en tu ámbito.');
-      if (edit && u.role !== 'catechist') fail(403, 'Tu perfil solo permite consultar.');
+      if (edit && !['admin','catechist'].includes(u.role)) fail(403, 'Tu perfil solo permite consultar.');
       return p;
     },
-    presentPerson(p, admin = false) {
+    presentPerson(p) {
       const base = {id:p.id, firstName:p.first_name,lastName:p.last_name,groupId:p.group_id,version:p.version};
-      if (admin) return base;
       return {...base,data:JSON.parse(p.data),photoId:p.photo_id,updatedAt:p.updated_at,documents:this.all('SELECT id, type, owner, owner_name AS ownerName, name, mime, size, created_at AS createdAt FROM files WHERE person_id = ? AND type <> ? ORDER BY created_at DESC',p.id,'photo')};
     },
     ensureStaffed() {
       const row = this.get(`SELECT g.id FROM groups g WHERE EXISTS(SELECT 1 FROM people p WHERE p.group_id=g.id)
-        AND NOT EXISTS(SELECT 1 FROM scopes s JOIN users u ON u.id=s.user_id WHERE s.group_id=g.id AND u.role='catechist' AND u.active=1)`);
+        AND NOT EXISTS(SELECT 1 FROM scopes s JOIN users u ON u.id=s.user_id WHERE s.group_id=g.id AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1)`);
       if (row) fail(409, 'Un grupo con personas no puede quedar sin catequista activo. Asigna un sustituto primero.');
     }
   };
   if (!store.get('SELECT 1 FROM metadata WHERE key = ?', 'schema')) {
-    if (!demo) { db.close(); fail(400, 'Primera versión de demostración: arranca con --demo.'); }
-    seedDemo(store);
+    if (demo) seedDemo(store);
+    else if (bootstrap) {
+      if (!/^[a-z0-9][a-z0-9._@-]{2,79}$/.test(bootstrap.username??'') || typeof bootstrap.password!=='string' || bootstrap.password.length<12 || bootstrap.password.length>128 || bootstrap.password===DEMO_PASSWORD || !bootstrap.name?.trim()) {
+        db.close();fail(400,'Configura un administrador inicial y una contraseña privada de al menos 12 caracteres.');
+      }
+      store.transaction(()=>{
+        store.run('INSERT INTO metadata VALUES (?,?)','schema','1');
+        store.run('INSERT INTO metadata VALUES (?,?)','demo','false');
+        store.run('INSERT INTO users (id,username,name,role,password_hash,is_catechist) VALUES (?,?,?,?,?,?)',randomUUID(),bootstrap.username,bootstrap.name.trim(),'admin',passwordHash(bootstrap.password),1);
+      });
+    } else { db.close();fail(400,'Base sin inicializar. Ejecuta npm run db:init con las variables del administrador.'); }
   }
   if (store.get('SELECT value FROM metadata WHERE key = ?', 'schema').value !== '1') fail(500, 'Versión de datos no compatible. No se han modificado tus registros.');
   return store;

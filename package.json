@@ -9,13 +9,18 @@
     "local": "node backend/app.js --demo",
     "db:import:catechumens": "node backend/scripts/import-catechumens.js",
     "test:local": "node --test --test-concurrency=1 backend/tests/*.test.js",
-    "check": "npm run build",
+    "check": "npm run lint && npm run test:all",
     "dev": "vite --config frontend/vite.config.js",
     "build": "vite build --config frontend/vite.config.js",
-    "start": "node backend/app.js --demo",
+    "start": "node backend/app.js",
     "test": "npm run build && node --test tests/*.test.mjs",
     "test:all": "npm run test && npm run test:local",
-    "lint": "eslint frontend backend tests"
+    "lint": "eslint frontend backend tests",
+    "start:production": "NODE_ENV=production node backend/app.js",
+    "db:init": "node backend/scripts/init.js",
+    "db:backup": "node backend/scripts/backup.js",
+    "db:reset-password": "node backend/scripts/reset-password.js",
+    "release": "npm run check && node scripts/package-release.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.31.0",
@@ -29,7 +34,7 @@
     "@vitejs/plugin-react": "6.0.2",
     "eslint": "9.39.4",
     "tailwindcss": "4.2.1",
-    "vite": "8.0.13"
+    "vite": "8.2.2"
   },
   "type": "module",
   "displayName": "Catequesis de adultos"
