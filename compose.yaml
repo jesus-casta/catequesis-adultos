@@ -1,0 +1,15 @@
+services:
+  adultos:
+    build: .
+    container_name: catequesis-adultos
+    restart: unless-stopped
+
+    network_mode: host
+
+    environment:
+      CATEQUESIS_HOST: 127.0.0.1
+      CATEQUESIS_PORT: 3000
+      CATEQUESIS_DB_PATH: /var/lib/catequesis/catequesis.sqlite
+
+    volumes:
+      - /var/lib/catequesis:/var/lib/catequesis
