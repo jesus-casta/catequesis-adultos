@@ -10,6 +10,7 @@ services:
       CATEQUESIS_HOST: 127.0.0.1
       CATEQUESIS_PORT: 3000
       CATEQUESIS_DB_PATH: /var/lib/catequesis/catequesis.sqlite
+      CATEQUESIS_PUBLIC_ORIGIN: https://gestioncatequesis.es
 
     volumes:
       - /var/lib/catequesis:/var/lib/catequesis
