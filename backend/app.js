@@ -55,7 +55,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     const catechesis=s.get('SELECT * FROM catecheses WHERE id=?',out.catechesisId);
     if(!catechesis)fail(400,'Selecciona una catequesis existente.');
     if(old&&old.catechesis_id!==out.catechesisId)fail(400,'No se puede cambiar la catequesis de un grupo existente.');
-    if((catechesis.kind==='first-communion')!==(out.itinerary==='first-communion'))fail(400,'El itinerario no corresponde a esta catequesis.');
+    if(catechesis.kind!=='general'&&(catechesis.kind==='first-communion')!==(out.itinerary==='first-communion'))fail(400,'El itinerario no corresponde a esta catequesis.');
     for (const id of out.catechistIds) { const u=s.user(id); if (!u?.active || !(u.role==='catechist'||(u.role==='admin'&&u.is_catechist))) fail(400,'Solo pueden asignarse catequistas activos.'); }
     return out;
   }
@@ -175,6 +175,25 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           s.run('DELETE FROM sessions WHERE token_hash=?',session.token_hash);
           res.setHeader('Set-Cookie','catequesis_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
           return json(res,200,{ok:true});
+        }
+        const catechesisMatch=path.match(/^\/api\/catecheses\/([^/]+)$/);
+        if((path==='/api/catecheses'&&method==='POST')||(catechesisMatch&&method==='PUT')) {
+          admin(user);keys(b,['name','parish','kind','version']);
+          const name=text(b.name,'Nombre del megagrupo',{required:true,max:160});
+          const parish=text(b.parish??'','Parroquia',{max:160});
+          const kind=choice(b.kind,['adults','first-communion','general'],'Tipo de catequesis');
+          const id=catechesisMatch?.[1]??randomUUID();
+          s.transaction(()=>{
+            if(catechesisMatch) {
+              const old=s.get('SELECT * FROM catecheses WHERE id=?',id);
+              if(!old)fail(404,'Megagrupo no encontrado.');
+              version(b.version,old);
+              if(kind!=='general'&&s.all('SELECT itinerary FROM groups WHERE catechesis_id=?',id).some(g=>(kind==='first-communion')!==(g.itinerary==='first-communion')))fail(409,'El tipo elegido no admite los itinerarios de los grupos existentes.');
+              s.run('UPDATE catecheses SET name=?,parish=?,kind=?,version=version+1 WHERE id=?',name,parish,kind,id);
+            } else s.run('INSERT INTO catecheses (id,name,parish,kind) VALUES (?,?,?,?)',id,name,parish,kind);
+            s.audit(user.id,'catechesis.save',id);
+          });
+          return json(res,catechesisMatch?200:201,{id});
         }
         if(path==='/api/catecheses'&&method==='GET') {
           const visible=s.all('SELECT * FROM groups').filter(g=>s.canRead(user,g.id));

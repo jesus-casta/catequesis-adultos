@@ -39,3 +39,16 @@ test('Migración de visualizadores: conserva el acceso una vez y no restaura per
   assert.deepEqual(s.publicUser(s.user('u-reader')).catechesisIds,[]);
   s.db.close();
 });
+
+test('Megagrupos: los nombres editados y los nuevos registros persisten al reiniciar',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'megagroups-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const path=join(dir,'test.sqlite');let s=openStore(path,true);
+  s.run("UPDATE catecheses SET name='Nombre personalizado',version=2 WHERE id='san-francisco'");
+  s.run("INSERT INTO catecheses (id,name,parish,kind) VALUES ('new','Otro megagrupo','Otra parroquia','general')");
+  s.db.close();s=openStore(path,false);
+  assert.equal(s.get("SELECT name FROM catecheses WHERE id='san-francisco'").name,'Nombre personalizado');
+  assert.equal(s.get("SELECT version FROM catecheses WHERE id='san-francisco'").version,2);
+  assert.equal(s.get('SELECT COUNT(*) n FROM catecheses').n,3);
+  assert(!s.publicUser(s.user('u-reader')).catechesisIds.includes('new'));
+  s.db.close();
+});

@@ -35,8 +35,8 @@ export function openStore(path, demo, bootstrap) {
     CREATE TABLE IF NOT EXISTS catecheses (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, parish TEXT NOT NULL, kind TEXT NOT NULL
     );
-    INSERT OR IGNORE INTO catecheses VALUES ('adults','Catequesis de adultos','','adults');
-    INSERT OR IGNORE INTO catecheses VALUES ('san-francisco','Primera Comunión — San Francisco de Asís','San Francisco de Asís','first-communion');
+    INSERT OR IGNORE INTO catecheses (id,name,parish,kind) VALUES ('adults','Catequesis de adultos','','adults');
+    INSERT OR IGNORE INTO catecheses (id,name,parish,kind) VALUES ('san-francisco','Primera Comunión — San Francisco de Asís','San Francisco de Asís','first-communion');
     CREATE TABLE IF NOT EXISTS reader_catecheses (
       user_id TEXT NOT NULL REFERENCES users(id), catechesis_id TEXT NOT NULL REFERENCES catecheses(id),
       PRIMARY KEY(user_id,catechesis_id)
@@ -78,6 +78,9 @@ export function openStore(path, demo, bootstrap) {
     if (!userColumns.has(column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
   }
   if (!userColumns.has('is_catechist')) db.exec('ALTER TABLE users ADD COLUMN is_catechist INTEGER NOT NULL DEFAULT 0');
+  if(!db.prepare('PRAGMA table_info(catecheses)').all().some(c=>c.name==='version')) {
+    db.exec('ALTER TABLE catecheses ADD COLUMN version INTEGER NOT NULL DEFAULT 1');
+  }
   // Existing groups stay in adult catechesis, with their IDs and assignments intact.
   if (!db.prepare('PRAGMA table_info(groups)').all().some(column=>column.name==='catechesis_id')) {
     db.exec("ALTER TABLE groups ADD COLUMN catechesis_id TEXT NOT NULL DEFAULT 'adults'");

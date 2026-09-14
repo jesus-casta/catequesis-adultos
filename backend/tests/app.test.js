@@ -421,3 +421,23 @@ spec('Visualizador: uno o varios megagrupos, archivos protegidos y retirada inme
   assert.equal((await req('/api/users/u-luis/photo',{auth:visitor})).status,404);
   assert.equal(app.store.publicUser(app.store.user(newReader.value.id)).catechesisIds.length,0);
 });
+
+spec('Megagrupos: administración crea y edita, sin conceder acceso implícito',async({req,login})=>{
+  const auth=await login('admin'),reader=await login('consulta'),catechist=await login('ana');
+  const data={name:'Catequesis de otra parroquia',parish:'Santa María',kind:'general'};
+  for(const user of [reader,catechist])assert.equal((await req('/api/catecheses',{auth:user,method:'POST',data})).status,403);
+  assert.equal((await req('/api/catecheses',{auth,method:'POST',data:{...data,name:' '}})).status,400);
+  const created=await req('/api/catecheses',{auth,method:'POST',data});assert.equal(created.status,201);
+  const id=created.value.id;
+  assert(!(await req('/api/catecheses',{auth:reader})).value.some(c=>c.id===id));
+  const original=(await req('/api/catecheses',{auth})).value.find(c=>c.id===id);
+  assert.equal((await req(`/api/catecheses/${id}`,{auth,method:'PUT',data:{...data,name:'Santa María — Catequesis',version:original.version}})).status,200);
+  assert.equal((await req(`/api/catecheses/${id}`,{auth,method:'PUT',data:{...data,version:original.version}})).status,409);
+  assert.equal((await req(`/api/catecheses/${id}`,{auth:reader,method:'PUT',data:{...data,version:2}})).status,403);
+  const group={name:'Comunión',parish:'Santa María',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'first-communion',catechesisId:id,catechistIds:[]};
+  assert.equal((await req('/api/groups',{auth,method:'POST',data:group})).status,201);
+  assert.equal((await req('/api/groups',{auth,method:'POST',data:{...group,name:'Confirmación',itinerary:'confirmation'}})).status,201);
+  assert.equal((await req(`/api/catecheses/${id}`,{auth,method:'PUT',data:{...data,kind:'adults',version:2}})).status,409);
+  const changed=(await req('/api/catecheses',{auth})).value.find(c=>c.id===id);
+  assert.equal(changed.name,'Santa María — Catequesis');assert.equal(changed.groupCount,2);
+});
