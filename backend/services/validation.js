@@ -3,7 +3,7 @@ export class AppError extends Error {
 }
 export const fail = (status, message) => { throw new AppError(status, message); };
 export const ROLES = ['admin', 'catechist', 'reader'];
-export const ITINERARIES = ['confirmation', 'baptism-1', 'baptism-2'];
+export const ITINERARIES = ['confirmation', 'baptism-1', 'baptism-2', 'first-communion'];
 export const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 export const DOC_TYPES = ['birth', 'baptism', 'sponsor-confirmation', 'registration'];
 export const OWNER_TYPES = ['participant', 'baptismSponsor', 'confirmationSponsor'];

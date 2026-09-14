@@ -544,3 +544,6 @@ body {margin:0;font-size:15px;}
 
 .recovery-link {background:none;border:0;color:#203e34;text-decoration:underline;cursor:pointer;font:inherit;padding:6px;}
 .recovery-link:disabled {opacity:.6;cursor:wait;}
+
+.catechesis-context {display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:22px;color:#203e34;}
+.itinerary-dot.first-communion {background:#c48c35;}

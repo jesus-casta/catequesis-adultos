@@ -11,7 +11,7 @@ test('Interfaz compilada: HTML, CSP con nonce, JavaScript y CSS servidos por Nod
   await new Promise(ok=>app.server.listen(0,'127.0.0.1',ok));
   const origin=`http://127.0.0.1:${app.server.address().port}`;
   const res=await fetch(origin);assert.equal(res.status,200);
-  const html=await res.text();assert.match(html,/<title>Catequesis de adultos<\/title>/);assert.match(html,/lang="es"/);assert(!html.includes('Starter Project'));
+  const html=await res.text();assert.match(html,/<title>Gestión de catequesis<\/title>/);assert.match(html,/lang="es"/);assert(!html.includes('Starter Project'));
   const nonce=res.headers.get('content-security-policy').match(/nonce-([^']+)/)[1];
   for(const script of html.matchAll(/<script\b[^>]*>/g))assert(script[0].includes(`nonce="${nonce}"`));
   const assets=new Set([...html.matchAll(/(?:src|href)="(\/assets\/[^" ]+)"/g)].map(m=>m[1]));assert(assets.size>=2);

@@ -54,3 +54,11 @@ El login incluye «¿Has olvidado tu contraseña?». El usuario introduce su nom
 El envío utiliza la API HTTPS de Amazon SES desde el backend, sin `sendmail` ni servidor SMTP en Docker. Configura `CATEQUESIS_MAIL_FROM`, `AWS_REGION` y permisos AWS de envío. Sigue [la guía de SES y Docker](docs/SES.md) para completar AWS, actualizar el contenedor y probar la entrega. Sin remitente configurado, el formulario indica que debe contactarse con administración.
 
 Los enlaces caducan en 30 minutos, se guardan únicamente como hash y son de un solo uso. Cambiar la contraseña revoca todas las sesiones y enlaces de recuperación de esa cuenta. También se invalidan si cambia su correo o contraseña. La respuesta de solicitud no revela si existe el usuario y se limita la frecuencia de las solicitudes.
+
+### Catequesis y grupos
+
+Después de iniciar sesión se elige entre **Catequesis de adultos** y **Primera Comunión — San Francisco de Asís**. Dentro de cada catequesis, administración puede crear los grupos que necesite y asignar personas y catequistas. El menú «Catequesis» permite volver a elegir. Las listas y búsquedas de personas quedan limitadas a la catequesis seleccionada. Usuarios y permisos siguen siendo globales; las asignaciones identifican la catequesis de cada grupo.
+
+Al actualizar, todos los grupos existentes se incorporan automáticamente a adultos, conservando sus identificadores, personas, documentos y permisos. San Francisco comienza sin grupos. La base de demostración conserva sus tres grupos de ejemplo; en producción se conservan exactamente los grupos existentes. No hay que reinicializar la base. Haz una copia de seguridad antes de desplegar y reconstruye el servicio `adultos` de Docker.
+
+Los catequistas solo ven las catequesis que contienen grupos asignados a ellos; no obtienen acceso al resto de grupos de esa catequesis. Administración y visualizadores mantienen su acceso global. La creación y edición de grupos corresponde a administración. Los grupos nuevos de San Francisco usan el itinerario Primera Comunión; sus nombres permiten indicar curso, turno o nivel. No se trasladan grupos completos entre catequesis desde el formulario.

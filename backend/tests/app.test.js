@@ -351,3 +351,35 @@ test('Recuperación: transporte ausente y fallo sin revelar la cuenta',async t=>
   assert.equal((await failing.req('/api/forgot-password',{method:'POST',data:{username:'ana'}})).status,200);
   assert.equal(failing.app.store.get('SELECT COUNT(*) n FROM password_resets').n,0);
 });
+
+spec('Catequesis: existentes en adultos, San Francisco vacío y acceso por ámbito',async({req,login})=>{
+  const admin=await login('admin');
+  const cs=(await req('/api/catecheses',{auth:admin})).value;
+  assert.equal(cs.length,2);assert.equal(cs.find(c=>c.id==='adults').groupCount,3);
+  assert.equal(cs.find(c=>c.id==='san-francisco').groupCount,0);
+  assert((await req('/api/groups',{auth:admin})).value.every(g=>g.catechesisId==='adults'));
+  const catechist=await login('ana');
+  assert.deepEqual((await req('/api/catecheses',{auth:catechist})).value.map(c=>c.id),['adults']);
+  assert.equal((await req('/api/catecheses')).status,401);
+});
+
+spec('Catequesis: crear grupos de comunión sin ampliar permisos ni cambiar grupos anteriores',async({req,login})=>{
+  const auth=await login('admin'),ana=await login('ana');
+  const data={name:'Primera Comunión · 1.º A',parish:'San Francisco de Asís',day:'Sábado',startTime:'10:00',endTime:'11:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistIds:['u-luis']};
+  assert.equal((await req('/api/groups',{method:'POST',auth:ana,data})).status,403);
+  assert.equal((await req('/api/groups',{method:'POST',auth,data:{...data,catechesisId:'missing'}})).status,400);
+  assert.equal((await req('/api/groups',{method:'POST',auth,data:{...data,itinerary:'confirmation'}})).status,400);
+  const created=await req('/api/groups',{method:'POST',auth,data});assert.equal(created.status,201);
+  const id=created.value.id;
+  const person=await req('/api/people',{method:'POST',auth,data:{firstName:'Comunión',lastName:'Prueba',groupId:id}});assert.equal(person.status,201);
+  assert.equal((await req(`/api/people/${person.value.id}`,{auth:ana})).status,404);
+  assert(!(await req('/api/groups',{auth:ana})).value.some(g=>g.id===id));
+  const luis=await login('luis');
+  assert.equal((await req(`/api/people/${person.value.id}`,{auth:luis})).status,200);
+  assert.equal((await req('/api/catecheses',{auth:luis})).value.length,2);
+  const visitor=await login('consulta');assert.equal((await req('/api/catecheses',{auth:visitor})).value.length,2);
+  const current=(await req('/api/groups',{auth})).value.find(g=>g.id===id);
+  assert.equal((await req(`/api/groups/${id}`,{method:'PUT',auth,data:{...data,version:current.version,name:'Primera Comunión · 1.º B'}})).status,200);
+  assert.equal((await req(`/api/groups/${id}`,{method:'PUT',auth,data:{...data,version:current.version+1,catechesisId:'adults',itinerary:'confirmation'}})).status,400);
+  assert.equal((await req('/api/groups',{auth})).value.find(g=>g.id===id).catechesisId,'san-francisco');
+});

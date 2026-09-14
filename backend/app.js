@@ -44,13 +44,18 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     catch (error) { if (error instanceof AppError) throw error; fail(400, 'La solicitud no contiene datos válidos.'); }
   }
   function group(id) { const g = s.get('SELECT * FROM groups WHERE id=?',id); if (!g) fail(400,'Selecciona un grupo existente.'); return g; }
-  function groupData(b) {
+  function groupData(b, old) {
     const out = {
       name:text(b.name,'Nombre',{required:true}), parish:text(b.parish,'Parroquia',{required:true}),
       day:choice(b.day,DAYS,'Día'), startTime:text(b.startTime,'Hora de inicio'), endTime:text(b.endTime,'Hora de finalización'),
       itinerary:choice(b.itinerary,ITINERARIES,'Itinerario'), catechistIds:ids(b.catechistIds)
     };
     if (![out.startTime,out.endTime].every(v=>/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) || out.endTime <= out.startTime) fail(400,'Revisa el horario: la hora final debe ser posterior a la inicial.');
+    out.catechesisId=text(b.catechesisId??old?.catechesis_id??'adults','Catequesis',{required:true,max:80});
+    const catechesis=s.get('SELECT * FROM catecheses WHERE id=?',out.catechesisId);
+    if(!catechesis)fail(400,'Selecciona una catequesis existente.');
+    if(old&&old.catechesis_id!==out.catechesisId)fail(400,'No se puede cambiar la catequesis de un grupo existente.');
+    if((catechesis.kind==='first-communion')!==(out.itinerary==='first-communion'))fail(400,'El itinerario no corresponde a esta catequesis.');
     for (const id of out.catechistIds) { const u=s.user(id); if (!u?.active || !(u.role==='catechist'||(u.role==='admin'&&u.is_catechist))) fail(400,'Solo pueden asignarse catequistas activos.'); }
     return out;
   }
@@ -169,16 +174,20 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           res.setHeader('Set-Cookie','catequesis_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
           return json(res,200,{ok:true});
         }
+        if(path==='/api/catecheses'&&method==='GET') {
+          const visible=s.all('SELECT * FROM groups').filter(g=>s.canRead(user,g.id));
+          return json(res,200,s.all('SELECT * FROM catecheses ORDER BY id').filter(c=>user.role==='admin'||user.role==='reader'||visible.some(g=>g.catechesis_id===c.id)).map(c=>({...c,groupCount:visible.filter(g=>g.catechesis_id===c.id).length})));
+        }
         if (path==='/api/groups' && method==='GET') {
           const gs=s.all('SELECT * FROM groups ORDER BY name').filter(g=>user.role==='admin'||s.canRead(user,g.id));
-          return json(res,200,gs.map(g=>({id:g.id,name:g.name,parish:g.parish,day:g.day,startTime:g.start_time,endTime:g.end_time,itinerary:g.itinerary,version:g.version,
+          return json(res,200,gs.map(g=>({id:g.id,catechesisId:g.catechesis_id,name:g.name,parish:g.parish,day:g.day,startTime:g.start_time,endTime:g.end_time,itinerary:g.itinerary,version:g.version,
             count:s.get('SELECT COUNT(*) AS n FROM people WHERE group_id=?',g.id).n,
             catechists:s.all("SELECT u.id,u.name,u.phone,u.email,u.version,EXISTS(SELECT 1 FROM user_photos up WHERE up.user_id=u.id) AS hasPhoto FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1 ORDER BY u.name",g.id)})));
         }
         const groupMatch=path.match(/^\/api\/groups\/([^/]+)$/);
         if ((path==='/api/groups'&&method==='POST') || (groupMatch&&method==='PUT')) {
-          admin(user); keys(b,['name','parish','day','startTime','endTime','itinerary','catechistIds','version']);
-          const g=groupData(b), id=groupMatch?.[1] ?? randomUUID();
+          admin(user); keys(b,['name','parish','day','startTime','endTime','itinerary','catechistIds','version','catechesisId']);
+          const g=groupData(b,groupMatch?group(groupMatch[1]):null), id=groupMatch?.[1] ?? randomUUID();
           s.transaction(()=>{
             const previous=s.all("SELECT sc.user_id FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1))",id).map(r=>r.user_id);
             if (groupMatch) {
@@ -186,7 +195,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
               if (old.itinerary!==g.itinerary && s.get('SELECT 1 FROM people WHERE group_id=?',id)) fail(409,'El cambio de itinerario de un grupo con personas está pendiente de definir.');
               s.run('UPDATE groups SET name=?,parish=?,day=?,start_time=?,end_time=?,itinerary=?,version=version+1 WHERE id=?',g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,id);
               s.run("DELETE FROM scopes WHERE group_id=? AND user_id IN (SELECT id FROM users WHERE role='catechist' OR (role='admin' AND is_catechist=1))",id);
-            } else s.run('INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary) VALUES (?,?,?,?,?,?,?)',id,g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary);
+            } else s.run('INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary,catechesis_id) VALUES (?,?,?,?,?,?,?,?)',id,g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,g.catechesisId);
             for (const u of g.catechistIds) s.run('INSERT OR IGNORE INTO scopes VALUES (?,?)',u,id);
             for (const uid of new Set([...previous,...g.catechistIds])) s.run('UPDATE users SET version=version+1 WHERE id=?',uid);
             s.ensureStaffed(); s.audit(user.id,'group.save',id);

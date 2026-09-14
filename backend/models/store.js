@@ -32,6 +32,11 @@ export function openStore(path, demo, bootstrap) {
       token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
       password_hash TEXT NOT NULL, email TEXT NOT NULL, expires INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS catecheses (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, parish TEXT NOT NULL, kind TEXT NOT NULL
+    );
+    INSERT OR IGNORE INTO catecheses VALUES ('adults','Catequesis de adultos','','adults');
+    INSERT OR IGNORE INTO catecheses VALUES ('san-francisco','Primera Comunión — San Francisco de Asís','San Francisco de Asís','first-communion');
     CREATE TABLE IF NOT EXISTS groups (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, parish TEXT NOT NULL, day TEXT NOT NULL,
       start_time TEXT NOT NULL, end_time TEXT NOT NULL, itinerary TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1
@@ -69,6 +74,17 @@ export function openStore(path, demo, bootstrap) {
     if (!userColumns.has(column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
   }
   if (!userColumns.has('is_catechist')) db.exec('ALTER TABLE users ADD COLUMN is_catechist INTEGER NOT NULL DEFAULT 0');
+  // Existing groups stay in adult catechesis, with their IDs and assignments intact.
+  if (!db.prepare('PRAGMA table_info(groups)').all().some(column=>column.name==='catechesis_id')) {
+    db.exec("ALTER TABLE groups ADD COLUMN catechesis_id TEXT NOT NULL DEFAULT 'adults'");
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS groups_catechesis ON groups(catechesis_id);
+    CREATE TRIGGER IF NOT EXISTS groups_catechesis_insert BEFORE INSERT ON groups
+    WHEN NOT EXISTS(SELECT 1 FROM catecheses WHERE id=NEW.catechesis_id)
+    BEGIN SELECT RAISE(ABORT,'Catequesis inexistente'); END;
+    CREATE TRIGGER IF NOT EXISTS groups_catechesis_update BEFORE UPDATE OF catechesis_id ON groups
+    WHEN NOT EXISTS(SELECT 1 FROM catecheses WHERE id=NEW.catechesis_id)
+    BEGIN SELECT RAISE(ABORT,'Catequesis inexistente'); END;`);
   const store = {
     db,
     get(sql, ...params) { return db.prepare(sql).get(...params); },
