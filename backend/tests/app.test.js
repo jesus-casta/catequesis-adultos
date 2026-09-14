@@ -242,7 +242,7 @@ spec('Fotos de catequista: administración guarda, ámbito limita consulta y ver
   assert.equal((await req(path)).status,401);
   assert.equal((await req('/api/users',{auth,method:'POST',data:{username:'sinambito',name:'Sin ámbito',role:'reader',active:true,password:DEMO_PASSWORD,groupIds:[]}})).status,201);
   const reader=await login('sinambito');
-  assert.equal((await req(path,{auth:reader})).status,200);
+  assert.equal((await req(path,{auth:reader})).status,404);
 });
 spec('Administración sube foto de catecúmeno y recibe datos completos',async({req,login})=>{
   const auth=await login('admin');
@@ -382,4 +382,42 @@ spec('Catequesis: crear grupos de comunión sin ampliar permisos ni cambiar grup
   assert.equal((await req(`/api/groups/${id}`,{method:'PUT',auth,data:{...data,version:current.version,name:'Primera Comunión · 1.º B'}})).status,200);
   assert.equal((await req(`/api/groups/${id}`,{method:'PUT',auth,data:{...data,version:current.version+1,catechesisId:'adults',itinerary:'confirmation'}})).status,400);
   assert.equal((await req('/api/groups',{auth})).value.find(g=>g.id===id).catechesisId,'san-francisco');
+});
+
+spec('Visualizador: uno o varios megagrupos, archivos protegidos y retirada inmediata',async({req,login,app})=>{
+  const auth=await login('admin');
+  const created=await req('/api/groups',{auth,method:'POST',data:{name:'Comunión A',parish:'San Francisco',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistIds:['u-luis']}});
+  assert.equal(created.status,201);
+  const person=await req('/api/people',{auth,method:'POST',data:{firstName:'Prueba',lastName:'Comunión',groupId:created.value.id}});
+  const path=`/api/people/${person.value.id}`;
+  const doc=await req(`${path}/documents`,{auth,method:'POST',data:{name:'documento.pdf',base64:PDF,type:'birth',owner:'participant',version:1}});
+  const photo=await req(`${path}/photo`,{auth,method:'POST',data:{name:'foto.png',base64:PNG,version:2}});
+  assert.equal(doc.status,201);assert.equal(photo.status,201);
+  const newReader=await req('/api/users',{auth,method:'POST',data:{username:'limited',name:'Consulta limitada',role:'reader',active:true,password:DEMO_PASSWORD,groupIds:[],catechesisIds:['adults']}});
+  assert.equal(newReader.status,201);
+  const visitor=await login('limited');
+  const change=async catechesisIds=>{
+    const user=(await req('/api/users',{auth})).value.find(u=>u.id===newReader.value.id);
+    return req(`/api/users/${user.id}`,{auth,method:'PUT',data:{...updateUser(user),catechesisIds}});
+  };
+  assert.deepEqual((await req('/api/catecheses',{auth:visitor})).value.map(c=>c.id),['adults']);
+  assert.equal((await req(path,{auth:visitor})).status,404);
+  assert.equal((await req(`/api/files/${doc.value.id}`,{auth:visitor})).status,404);
+  assert.equal((await change(['adults','san-francisco'])).status,200);
+  assert.equal((await req('/api/catecheses',{auth:visitor})).value.length,2);
+  assert.equal((await req(path,{auth:visitor})).status,200);
+  assert.equal((await req(`/api/files/${doc.value.id}`,{auth:visitor})).status,200);
+  assert.equal((await req(`/api/files/${photo.value.id}`,{auth:visitor})).status,200);
+  assert.equal((await req(`${path}/documents`,{auth:visitor,method:'POST',data:{}})).status,403);
+  assert.equal((await change(['missing'])).status,400);
+  assert.equal((await change(['san-francisco'])).status,200);
+  assert.equal((await req('/api/people/p-1',{auth:visitor})).status,404);
+  assert.deepEqual((await req('/api/groups',{auth:visitor})).value.map(g=>g.id),[created.value.id]);
+  assert.equal((await change([])).status,200);
+  assert.deepEqual((await req('/api/people',{auth:visitor})).value,[]);
+  assert.deepEqual((await req('/api/catecheses',{auth:visitor})).value,[]);
+  assert.equal((await req(`/api/files/${doc.value.id}`,{auth:visitor})).status,404);
+  assert.equal((await req(`/api/files/${photo.value.id}`,{auth:visitor})).status,404);
+  assert.equal((await req('/api/users/u-luis/photo',{auth:visitor})).status,404);
+  assert.equal(app.store.publicUser(app.store.user(newReader.value.id)).catechesisIds.length,0);
 });

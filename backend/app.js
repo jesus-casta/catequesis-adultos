@@ -67,6 +67,8 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     if(b.isCatechist!==undefined && typeof b.isCatechist!=='boolean')fail(400,'Option catequista no válida.');
     if(role==='reader'&&b.isCatechist===true)fail(400,'Visualizador no se puede combinar con Catequista.');
     const isCatechist=role==='catechist'||(role==='admin'&&(b.isCatechist??!!old?.is_catechist));
+    const catechesisIds=role==='reader'?ids(b.catechesisIds??(old?.role==='reader'?s.publicUser(old).catechesisIds:[])):[];
+    for(const id of catechesisIds)if(!s.get('SELECT 1 FROM catecheses WHERE id=?',id))fail(400,'Selecciona una catequesis existente.');
     const requestedGroups=ids(b.groupIds);
     const groupIds=role==='reader'?[]:requestedGroups; groupIds.forEach(group);
     if (role==='admin' && !isCatechist && groupIds.length) fail(400,'Administración tiene acceso a todos los grupos y no necesita asignaciones.');
@@ -76,7 +78,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     const phone=b.phone===undefined?undefined:text(b.phone,'Teléfono',{max:40});
     const email=b.email===undefined?undefined:text(b.email,'Correo electrónico',{max:160});
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400,'Introduce un correo electrónico válido.');
-    return {username,role,active:b.active,groupIds,name,password,phone,email,isCatechist};
+    return {username,role,active:b.active,groupIds,catechesisIds,name,password,phone,email,isCatechist};
   }
   function current(req, csrf = false) {
     const a=auth(req);
@@ -176,7 +178,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         if(path==='/api/catecheses'&&method==='GET') {
           const visible=s.all('SELECT * FROM groups').filter(g=>s.canRead(user,g.id));
-          return json(res,200,s.all('SELECT * FROM catecheses ORDER BY id').filter(c=>user.role==='admin'||user.role==='reader'||visible.some(g=>g.catechesis_id===c.id)).map(c=>({...c,groupCount:visible.filter(g=>g.catechesis_id===c.id).length})));
+          return json(res,200,s.all('SELECT * FROM catecheses ORDER BY id').filter(c=>user.role==='admin'||(user.role==='reader'&&s.get('SELECT 1 FROM reader_catecheses WHERE user_id=? AND catechesis_id=?',user.id,c.id))||visible.some(g=>g.catechesis_id===c.id)).map(c=>({...c,groupCount:visible.filter(g=>g.catechesis_id===c.id).length})));
         }
         if (path==='/api/groups' && method==='GET') {
           const gs=s.all('SELECT * FROM groups ORDER BY name').filter(g=>user.role==='admin'||s.canRead(user,g.id));
@@ -216,7 +218,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
               s.audit(user.id,'catechist.photo.upload',target.id);
             });return json(res,201,{ok:true});
           }
-          if(user.role!=='admin' && user.role!=='reader' && !s.all('SELECT group_id FROM scopes WHERE user_id=?',target.id).some(g=>s.canRead(user,g.group_id)))fail(404,'Foto no disponible.');
+          if(user.role!=='admin' && !s.all('SELECT group_id FROM scopes WHERE user_id=?',target.id).some(g=>s.canRead(user,g.group_id)))fail(404,'Foto no disponible.');
           const photo=s.get('SELECT * FROM user_photos WHERE user_id=?',target.id);
           if(!photo)fail(404,'Foto no disponible.');
           res.setHeader('Content-Security-Policy',"sandbox; default-src 'none';");
@@ -224,7 +226,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         const userMatch=path.match(/^\/api\/users\/([^/]+)$/);
         if ((path==='/api/users'&&method==='POST')||(userMatch&&method==='PUT')) {
-          admin(user); keys(b,['username','name','role','active','password','groupIds','version','phone','email','isCatechist']);
+          admin(user); keys(b,['username','name','role','active','password','groupIds','version','phone','email','isCatechist','catechesisIds']);
           const d=userData(b,userMatch?s.user(userMatch[1]):null), id=userMatch?.[1]??randomUUID();
           if (!userMatch&&!d.password) fail(400,'Introduce una contraseña inicial de al menos 12 caracteres.');
           const duplicate=s.get('SELECT id FROM users WHERE username=?',d.username);
@@ -239,6 +241,8 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             } else s.run('INSERT INTO users (id,username,name,role,active,password_hash) VALUES (?,?,?,?,?,?)',id,d.username,d.name,d.role,Number(d.active),passwordHash(d.password));
             s.run('UPDATE users SET is_catechist=? WHERE id=?',Number(d.isCatechist),id);
             s.run('UPDATE users SET phone=COALESCE(?,phone),email=COALESCE(?,email) WHERE id=?',d.phone??null,d.email??null,id);
+            s.run('DELETE FROM reader_catecheses WHERE user_id=?',id);
+            for(const c of d.catechesisIds)s.run('INSERT INTO reader_catecheses VALUES (?,?)',id,c);
             for(const g of d.groupIds) s.run('INSERT INTO scopes VALUES (?,?)',id,g);
             for(const gid of new Set([...previousGroups,...d.groupIds])) s.run('UPDATE groups SET version=version+1 WHERE id=?',gid);
             if(!s.get("SELECT 1 FROM users WHERE role='admin' AND active=1")) fail(409,'Debe mantenerse al menos una cuenta administradora activa.');

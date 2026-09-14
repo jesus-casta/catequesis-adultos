@@ -37,6 +37,10 @@ export function openStore(path, demo, bootstrap) {
     );
     INSERT OR IGNORE INTO catecheses VALUES ('adults','Catequesis de adultos','','adults');
     INSERT OR IGNORE INTO catecheses VALUES ('san-francisco','Primera Comunión — San Francisco de Asís','San Francisco de Asís','first-communion');
+    CREATE TABLE IF NOT EXISTS reader_catecheses (
+      user_id TEXT NOT NULL REFERENCES users(id), catechesis_id TEXT NOT NULL REFERENCES catecheses(id),
+      PRIMARY KEY(user_id,catechesis_id)
+    );
     CREATE TABLE IF NOT EXISTS groups (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, parish TEXT NOT NULL, day TEXT NOT NULL,
       start_time TEXT NOT NULL, end_time TEXT NOT NULL, itinerary TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1
@@ -97,8 +101,8 @@ export function openStore(path, demo, bootstrap) {
     },
     audit(actor, action, entity) { this.run('INSERT INTO audit VALUES (?, ?, ?, ?, ?)', randomUUID(), actor, action, entity, new Date().toISOString()); },
     user(id) { return this.get('SELECT * FROM users WHERE id = ?', id); },
-    publicUser(u) { return { id:u.id, username:u.username, name:u.name, phone:u.phone, email:u.email, hasPhoto:!!this.get('SELECT 1 FROM user_photos WHERE user_id=?',u.id), role:u.role, isCatechist:u.role==='catechist'||(u.role==='admin'&&!!u.is_catechist), active:!!u.active, version:u.version, groupIds:this.all('SELECT group_id FROM scopes WHERE user_id = ?',u.id).map(g=>g.group_id) }; },
-    canRead(u, groupId) { return u.role === 'admin' || u.role === 'reader' || (u.role === 'catechist' && !!this.get('SELECT 1 FROM scopes WHERE user_id = ? AND group_id = ?',u.id,groupId)); },
+    publicUser(u) { return { id:u.id, username:u.username, name:u.name, phone:u.phone, email:u.email, hasPhoto:!!this.get('SELECT 1 FROM user_photos WHERE user_id=?',u.id), role:u.role, isCatechist:u.role==='catechist'||(u.role==='admin'&&!!u.is_catechist), active:!!u.active, version:u.version, catechesisIds:this.all('SELECT catechesis_id FROM reader_catecheses WHERE user_id=? ORDER BY catechesis_id',u.id).map(c=>c.catechesis_id), groupIds:this.all('SELECT group_id FROM scopes WHERE user_id = ?',u.id).map(g=>g.group_id) }; },
+    canRead(u, groupId) { return u.role === 'admin' || (u.role === 'reader' && !!this.get('SELECT 1 FROM reader_catecheses rc JOIN groups g ON g.catechesis_id=rc.catechesis_id WHERE rc.user_id=? AND g.id=?',u.id,groupId)) || (u.role === 'catechist' && !!this.get('SELECT 1 FROM scopes WHERE user_id = ? AND group_id = ?',u.id,groupId)); },
     person(u, id, edit = false) {
       const p = this.get('SELECT * FROM people WHERE id = ?', id);
       if (!p || !this.canRead(u, p.group_id)) fail(404, 'Ficha no disponible en tu ámbito.');
@@ -129,6 +133,13 @@ export function openStore(path, demo, bootstrap) {
     } else { db.close();fail(400,'Base sin inicializar. Ejecuta npm run db:init con las variables del administrador.'); }
   }
   if (store.get('SELECT value FROM metadata WHERE key = ?', 'schema').value !== '1') fail(500, 'Versión de datos no compatible. No se han modificado tus registros.');
+  if(!store.get("SELECT 1 FROM metadata WHERE key='reader-catecheses-v1'")) {
+    store.transaction(()=>{
+      // Preserve current readers' existing global access once; new readers get no implicit access.
+      store.run("INSERT OR IGNORE INTO reader_catecheses SELECT u.id,c.id FROM users u CROSS JOIN catecheses c WHERE u.role='reader'");
+      store.run("INSERT INTO metadata VALUES ('reader-catecheses-v1','1')");
+    });
+  }
   return store;
 }
 

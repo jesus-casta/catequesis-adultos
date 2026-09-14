@@ -26,3 +26,16 @@ test('Migración de grupos anteriores: conserva datos y no duplica catequesis al
   assert.equal(s.get("SELECT name FROM groups WHERE id='existing'").name,'Grupo actual');
   s.db.close();
 });
+
+test('Migración de visualizadores: conserva el acceso una vez y no restaura permisos retirados',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'readers-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const path=join(dir,'test.sqlite');let s=openStore(path,true);
+  s.run("DELETE FROM metadata WHERE key='reader-catecheses-v1'");
+  s.run('DELETE FROM reader_catecheses');s.db.close();
+  s=openStore(path,false);
+  assert.deepEqual(s.publicUser(s.user('u-reader')).catechesisIds,['adults','san-francisco']);
+  s.run("DELETE FROM reader_catecheses WHERE user_id='u-reader'");s.db.close();
+  s=openStore(path,false);
+  assert.deepEqual(s.publicUser(s.user('u-reader')).catechesisIds,[]);
+  s.db.close();
+});
