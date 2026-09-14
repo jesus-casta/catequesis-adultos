@@ -7,6 +7,10 @@ services:
     network_mode: host
 
     environment:
+      NODE_ENV: production
+      CATEQUESIS_MAIL_FROM: ${CATEQUESIS_MAIL_FROM:-}
+      AWS_REGION: ${AWS_REGION:-}
+      CATEQUESIS_SES_CONFIGURATION_SET: ${CATEQUESIS_SES_CONFIGURATION_SET:-}
       CATEQUESIS_HOST: 127.0.0.1
       CATEQUESIS_PORT: 3000
       CATEQUESIS_DB_PATH: /var/lib/catequesis/catequesis.sqlite

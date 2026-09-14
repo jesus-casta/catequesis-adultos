@@ -6,3 +6,12 @@ local-data
 *.sqlite-shm
 *.sqlite-wal
 npm-debug.log
+
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
+release
+.sites-runtime
+.wrangler

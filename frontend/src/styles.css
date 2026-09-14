@@ -541,3 +541,6 @@ body {margin:0;font-size:15px;}
 .user-role-sections h2 {display:flex;align-items:center;gap:10px;font-size:21px;font-weight:600;margin-bottom:6px;}
 .user-role-sections .list-toolbar p {font-size:13px;}
 .role-empty {padding:0 24px 24px;color:#64756c;}
+
+.recovery-link {background:none;border:0;color:#203e34;text-decoration:underline;cursor:pointer;font:inherit;padding:6px;}
+.recovery-link:disabled {opacity:.6;cursor:wait;}

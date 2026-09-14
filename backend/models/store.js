@@ -28,6 +28,10 @@ export function openStore(path, demo, bootstrap) {
       role TEXT NOT NULL CHECK(role IN ('admin','catechist','reader')),
       active INTEGER NOT NULL DEFAULT 1, password_hash TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1
     );
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+      password_hash TEXT NOT NULL, email TEXT NOT NULL, expires INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS groups (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, parish TEXT NOT NULL, day TEXT NOT NULL,
       start_time TEXT NOT NULL, end_time TEXT NOT NULL, itinerary TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1

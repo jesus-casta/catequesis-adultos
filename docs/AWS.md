@@ -12,7 +12,7 @@ El siguiente día elegiremos cuenta/región AWS, dominio, instancia y destino ex
 
 1. Preparar Linux con Node.js 24 LTS (`node:sqlite` incluido), npm, Nginx y un certificado TLS válido para el dominio. Verificar que Node está en `/usr/bin/node` o ajustar los servicios.
 2. Crear el usuario de sistema `catequesis`. Descomprimir el paquete en `/opt/catequesis`, conservando el código como propiedad de root y legible por el usuario de servicio. Crear `/var/lib/catequesis` con propietario `catequesis` y modo 0700.
-3. El paquete incluye `dist/client`. El servidor HTTP utiliza módulos incluidos en Node; no necesita instalar dependencias para servir la interfaz ya compilada. Para recompilar: `npm ci && npm run check` en una máquina de desarrollo o CI.
+3. El paquete incluye `dist/client`. Instala las dependencias del backend con `npm ci --omit=dev` (incluyen el SDK de Amazon SES). Para recompilar: `npm ci && npm run check` en una máquina de desarrollo o CI.
 4. Copiar `deploy/production.env.example` a `/etc/catequesis.env`, sustituir el dominio y dejar el fichero propiedad de root con permisos 0600. No introducir contraseñas en el repositorio.
 5. Inicializar la base una sola vez como usuario de servicio. Definir `CATEQUESIS_DB_PATH=/var/lib/catequesis/catequesis.sqlite`, `CATEQUESIS_ADMIN_USERNAME`, `CATEQUESIS_ADMIN_NAME` y `CATEQUESIS_ADMIN_PASSWORD` en un entorno temporal privado; ejecutar `node /opt/catequesis/backend/scripts/init.js`. Contraseña privada de 12 a 128 caracteres. Retirar la variable de contraseña al terminar. La inicialización posterior no restablece cuentas existentes.
 6. Instalar `deploy/catequesis.service` en `/etc/systemd/system/`; ejecutar `systemctl daemon-reload` y `systemctl enable --now catequesis`. Verificar `systemctl status catequesis` y `journalctl -u catequesis`.
@@ -44,7 +44,7 @@ Para restaurar: detener `catequesis`, conservar la base actual con otro nombre, 
 
 ## Contraseñas y operación
 
-Administración puede cambiar contraseñas desde Usuarios. Si se pierde el acceso de todos los administradores, un operador del servidor puede establecer `CATEQUESIS_NEW_PASSWORD` en su entorno privado y ejecutar `node backend/scripts/reset-password.js USUARIO`, con `CATEQUESIS_DB_PATH` configurado. Revoca las sesiones de esa cuenta. No hay recuperación automática por correo.
+Administración puede cambiar contraseñas desde Usuarios. Si se pierde el acceso de todos los administradores, un operador del servidor puede establecer `CATEQUESIS_NEW_PASSWORD` en su entorno privado y ejecutar `node backend/scripts/reset-password.js USUARIO`, con `CATEQUESIS_DB_PATH` configurado. Revoca las sesiones de esa cuenta. La recuperación por correo utiliza Amazon SES; consulta [SES.md](SES.md).
 
 El límite de acceso se aplica por dirección de conexión y nombre de usuario: ocho fallos durante cinco minutos. No se usan cabeceras X-Forwarded-For no verificadas. Para una apertura amplia, configurar adicionalmente límites en el proxy y observabilidad según el tráfico real.
 

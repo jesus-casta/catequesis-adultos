@@ -46,3 +46,11 @@ Seguir [docs/AWS.md](docs/AWS.md). Incluye configuración de HTTPS, servicio Lin
 La primera instalación prevista usa una instancia única con almacenamiento persistente. No se ha desplegado en AWS. Cuenta/región, dominio, certificado y almacenamiento externo de copias se configuran al desplegar.
 
 El estado actual está en [docs/ESTADO.md](docs/ESTADO.md). Funciones de evolución que no forman parte de esta entrega: promociones automáticas, borrado definitivo, conservación documental configurable y recuperación por correo.
+
+### Recuperación de contraseña
+
+El login incluye «¿Has olvidado tu contraseña?». El usuario introduce su nombre de acceso y recibe un enlace en el correo de su ficha (Administración → Usuarios). Las cuentas sin correo deben contactar con administración.
+
+El envío utiliza la API HTTPS de Amazon SES desde el backend, sin `sendmail` ni servidor SMTP en Docker. Configura `CATEQUESIS_MAIL_FROM`, `AWS_REGION` y permisos AWS de envío. Sigue [la guía de SES y Docker](docs/SES.md) para completar AWS, actualizar el contenedor y probar la entrega. Sin remitente configurado, el formulario indica que debe contactarse con administración.
+
+Los enlaces caducan en 30 minutos, se guardan únicamente como hash y son de un solo uso. Cambiar la contraseña revoca todas las sesiones y enlaces de recuperación de esa cuenta. También se invalidan si cambia su correo o contraseña. La respuesta de solicitud no revela si existe el usuario y se limita la frecuencia de las solicitudes.

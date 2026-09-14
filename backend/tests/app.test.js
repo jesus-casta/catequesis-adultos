@@ -309,3 +309,45 @@ spec('Visualizador es exclusivo: se rechaza combinarlo con catequista',async({re
  const saved=(await req('/api/users',{auth})).value.find(u=>u.id===reader.id);
  assert.equal(saved.role,'reader');assert.equal(saved.isCatechist,false);
 });
+
+test('Recuperación: respuesta privada, enlace único y revocación de sesiones',async t=>{
+  const messages=[];
+  const {app,req,login}=await fixture(t,{sendPasswordReset:async message=>messages.push(message)});
+  app.store.run('UPDATE users SET email=? WHERE id=?','ana@example.org','u-ana');
+  const auth=await login();
+  const request=username=>req('/api/forgot-password',{method:'POST',data:{username}});
+  const known=await request('ana'),unknown=await request('desconocido');
+  assert.equal(known.status,200);assert.deepEqual(known.value,unknown.value);assert.equal(messages.length,1);
+  const token=new URL(messages[0].url).hash.split('=')[1];
+  assert.equal(messages[0].to,'ana@example.org');
+  assert.notEqual(app.store.get('SELECT token_hash FROM password_resets').token_hash,token);
+  const reset=password=>req('/api/reset-password',{method:'POST',data:{token,password}});
+  assert.equal((await reset('corta')).status,400);
+  assert.equal((await reset('Nueva-clave-segura-2026!')).status,200);
+  assert.equal((await req('/api/session',{auth})).status,401);
+  assert.equal((await reset('Otra-clave-segura-2026!')).status,400);
+  assert.equal((await req('/api/login',{method:'POST',data:{username:'ana',password:DEMO_PASSWORD}})).status,401);
+  assert.equal((await req('/api/login',{method:'POST',data:{username:'ana',password:'Nueva-clave-segura-2026!'}})).status,200);
+});
+
+test('Recuperación: caducidad, cuenta desactivada y límite de solicitudes',async t=>{
+  let clock=Date.now();const messages=[];
+  const {app,req}=await fixture(t,{now:()=>clock,sendPasswordReset:async message=>messages.push(message)});
+  app.store.run('UPDATE users SET email=? WHERE id=?','ana@example.org','u-ana');
+  const request=()=>req('/api/forgot-password',{method:'POST',data:{username:'ana'}});
+  const reset=()=>req('/api/reset-password',{method:'POST',data:{token:new URL(messages.at(-1).url).hash.split('=')[1],password:'Nueva-clave-segura-2026!'}});
+  await request();clock+=30*60*1000;assert.equal((await reset()).status,400);
+  await request();app.store.run('UPDATE users SET active=0 WHERE id=?','u-ana');assert.equal((await reset()).status,400);
+  clock+=300001;
+  for(let i=0;i<8;i++)assert.equal((await request()).status,200);
+  assert.equal(messages.length,2);assert.equal((await request()).status,429);
+});
+
+test('Recuperación: transporte ausente y fallo sin revelar la cuenta',async t=>{
+  const {req}=await fixture(t,{sendPasswordReset:null});
+  assert.equal((await req('/api/forgot-password',{method:'POST',data:{username:'ana'}})).status,503);
+  const failing=await fixture(t,{sendPasswordReset:async()=>{throw new Error('mail unavailable');}});
+  failing.app.store.run('UPDATE users SET email=? WHERE id=?','ana@example.org','u-ana');
+  assert.equal((await failing.req('/api/forgot-password',{method:'POST',data:{username:'ana'}})).status,200);
+  assert.equal(failing.app.store.get('SELECT COUNT(*) n FROM password_resets').n,0);
+});

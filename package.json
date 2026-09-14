@@ -23,6 +23,7 @@
     "release": "npm run check && node scripts/package-release.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "3.1131.0",
     "lucide-react": "^1.31.0",
     "mysql2": "^3.24.3",
     "react": "19.2.6",

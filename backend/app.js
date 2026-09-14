@@ -1,3 +1,4 @@
+import { createResetMailer } from './services/mail.js';
 import { createServer } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
@@ -11,7 +12,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MIME = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json','.rsc':'text/x-component; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.ico':'image/x-icon','.woff2':'font/woff2','.txt':'text/plain; charset=utf-8'};
 const SESSION_MS = 8 * 60 * 60 * 1000;
 
-export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesis.sqlite'), demo = false, staticRoot = resolve(ROOT, 'dist/client'), now = Date.now, publicOrigin = '', production = false } = {}) {
+export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesis.sqlite'), demo = false, staticRoot = resolve(ROOT, 'dist/client'), now = Date.now, publicOrigin = '', production = false, sendPasswordReset = createResetMailer() } = {}) {
   let external;
   if(publicOrigin) {
     external=new URL(publicOrigin);
@@ -96,6 +97,46 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
       if (req.headers['sec-fetch-site']==='cross-site') fail(403,'No se admite acceso desde otro sitio.');
       if(path==='/healthz'&&method==='GET'){s.get('SELECT 1');return json(res,200,{ok:true});}
       if (path==='/api/meta' && method==='GET') return json(res,200,{version:'0.1.0',demo:s.get("SELECT value FROM metadata WHERE key='demo'")?.value==='true',localOnly:!external,photoLimitMB:2,documentLimitMB:5});
+      if (['/api/forgot-password','/api/reset-password'].includes(path) && method==='POST') {
+        const b=await body(req,path);
+        for(const [key,value] of attempts)if(value.until<=now())attempts.delete(key);
+        const key=`recovery:${req.socket.remoteAddress}`;
+        const attempt=attempts.get(key)??{count:0,until:now()+300000};
+        if(attempt.count>=8)fail(429,'Demasiados intentos. Espera cinco minutos.');
+        attempts.set(key,{...attempt,count:attempt.count+1});
+        if(path==='/api/forgot-password') {
+          keys(b,['username']);
+          const username=text(b.username,'Usuario',{required:true,max:80}).toLowerCase();
+          if(!sendPasswordReset)fail(503,'La recuperación por correo no está disponible. Contacta con administración.');
+          const user=s.get('SELECT * FROM users WHERE username=? AND active=1',username);
+          s.run('DELETE FROM password_resets WHERE expires<=?',now());
+          if(user?.email) {
+            const token=randomBytes(32).toString('hex');
+            s.run('INSERT INTO password_resets VALUES (?,?,?,?,?)',hash(token),user.id,user.password_hash,user.email,now()+30*60*1000);
+            try {
+              await sendPasswordReset({to:user.email,url:`${external?.origin??url.origin}/#reset-password=${token}`});
+            } catch {
+              s.run('DELETE FROM password_resets WHERE token_hash=?',hash(token));
+              // Do not expose account existence or mail transport details.
+              console.error('No se pudo entregar un correo de recuperación.');
+            }
+          }
+          return json(res,200,{message:'Si el usuario tiene una cuenta activa con correo registrado, recibirá un enlace para recuperar la contraseña. Revisa también la carpeta de spam. Si no llega, contacta con administración.'});
+        }
+        keys(b,['token','password']);
+        const token=text(b.token,'Enlace',{required:true,max:64});
+        const password=text(b.password,'Contraseña',{required:true,max:128});
+        if(password.length<12)fail(400,'La contraseña debe tener al menos 12 caracteres.');
+        const reset=/^[a-f0-9]{64}$/.test(token)&&s.get('SELECT r.* FROM password_resets r JOIN users u ON u.id=r.user_id WHERE r.token_hash=? AND r.expires>? AND u.active=1 AND u.password_hash=r.password_hash AND u.email=r.email',hash(token),now());
+        if(!reset)fail(400,'El enlace no es válido o ha caducado. Solicita uno nuevo.');
+        s.transaction(()=>{
+          s.run('UPDATE users SET password_hash=?,version=version+1 WHERE id=?',passwordHash(password),reset.user_id);
+          s.run('DELETE FROM sessions WHERE user_id=?',reset.user_id);
+          s.run('DELETE FROM password_resets WHERE user_id=?',reset.user_id);
+          s.audit(reset.user_id,'password.reset',reset.user_id);
+        });
+        return json(res,200,{message:'Contraseña actualizada. Ya puedes iniciar sesión.'});
+      }
       if (path==='/api/login' && method==='POST') {
         const b=await body(req,path); keys(b,['username','password']);
         const username=text(b.username,'Usuario',{max:80}).toLowerCase();
