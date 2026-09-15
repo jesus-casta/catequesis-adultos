@@ -33,7 +33,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     return { user, session };
   }
   function admin(user) { if (user.role !== 'admin') fail(403, 'Esta operación corresponde a administración.'); }
-  function bodyLimit(path) { return /\/(documents|photo)$/.test(path) ? 7 * 1024 * 1024 + 65536 : 65536; }
+  function bodyLimit(path) { return /\/(documents|photo)$/.test(path) ? 7 * 1024 * 1024 + 65536 : /\/import$/.test(path) ? 2 * 1024 * 1024 : 65536; }
   async function body(req, path) {
     if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) fail(415, 'Se requiere contenido JSON.');
     const max = bodyLimit(path);
@@ -198,6 +198,48 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         if(path==='/api/catecheses'&&method==='GET') {
           const visible=s.all('SELECT * FROM groups').filter(g=>s.canRead(user,g.id));
           return json(res,200,s.all('SELECT * FROM catecheses ORDER BY id').filter(c=>user.role==='admin'||(user.role==='reader'&&s.get('SELECT 1 FROM reader_catecheses WHERE user_id=? AND catechesis_id=?',user.id,c.id))||visible.some(g=>g.catechesis_id===c.id)).map(c=>({...c,groupCount:visible.filter(g=>g.catechesis_id===c.id).length})));
+        }
+        const catechesisImport=path.match(/^\/api\/catecheses\/([^/]+)\/import$/);
+        if(catechesisImport&&method==='POST') {
+          if(!['admin','catechist'].includes(user.role))fail(403,'Tu perfil solo permite consultar.');
+          keys(b,['people','commit']);
+          if(!Array.isArray(b.people)||b.people.length>1000||typeof b.commit!=='boolean')fail(400,'El contenido del Excel no es válido.');
+          const catechesis=s.get('SELECT * FROM catecheses WHERE id=?',catechesisImport[1]);
+          if(!catechesis)fail(404,'Megagrupo no disponible.');
+          const allowedGroups=s.all('SELECT * FROM groups WHERE catechesis_id=?',catechesis.id).filter(g=>user.role==='admin'||s.canRead(user,g.id));
+          const allowedIds=new Set(allowedGroups.map(g=>g.id)),references=new Set(),incomingIds=new Set(),names=new Set();
+          const prepared=b.people.map((item,index)=>{
+            keys(item,['reference','id','firstName','lastName','groupId','data']);
+            const row=index+2,reference=text(item.reference,`Fila ${row}: referencia`,{required:true,max:160});
+            if(references.has(reference))fail(400,`Fila ${row}: la referencia está repetida.`);references.add(reference);
+            const id=text(item.id??'',`Fila ${row}: ID`,{max:80});
+            if(id&&incomingIds.has(id))fail(400,`Fila ${row}: el ID de ficha está repetido.`);if(id)incomingIds.add(id);
+            const firstName=text(item.firstName,`Fila ${row}: nombre`,{required:true,max:100}),lastName=text(item.lastName,`Fila ${row}: apellidos`,{required:true,max:160});
+            const groupId=text(item.groupId,`Fila ${row}: grupo`,{required:true,max:80});
+            if(!allowedIds.has(groupId))fail(403,`Fila ${row}: el grupo no pertenece a tu ámbito dentro de este megagrupo.`);
+            const old=id?s.get('SELECT * FROM people WHERE id=?',id):null;
+            if(id&&!old)fail(400,`Fila ${row}: el ID de ficha no existe. Déjalo vacío para crear una ficha nueva.`);
+            if(old&&!allowedIds.has(old.group_id))fail(403,`Fila ${row}: la ficha no pertenece a este megagrupo o a tu ámbito.`);
+            if(old&&old.group_id!==groupId&&user.role!=='admin')fail(403,`Fila ${row}: solo administración puede trasladar fichas entre grupos.`);
+            const nameKey=`${firstName.toLocaleLowerCase('es')}\n${lastName.toLocaleLowerCase('es')}`;
+            if(names.has(nameKey))fail(409,`Fila ${row}: hay otra fila con el mismo nombre y apellidos.`);names.add(nameKey);
+            const duplicate=s.all('SELECT id,first_name,last_name FROM people').find(p=>p.id!==id&&p.first_name.toLocaleLowerCase('es')===firstName.toLocaleLowerCase('es')&&p.last_name.toLocaleLowerCase('es')===lastName.toLocaleLowerCase('es'));
+            if(duplicate)fail(409,`Fila ${row}: ya existe otra ficha con el mismo nombre y apellidos.`);
+            const data=personalData(old?{...JSON.parse(old.data),...(item.data??{}),guardians:item.data?.guardians??[]}:item.data??{});
+            if(old)for(const owner of ['baptismSponsor','confirmationSponsor'])if(JSON.parse(old.data)[owner]!==data[owner]&&s.get('SELECT 1 FROM files WHERE person_id=? AND owner=?',old.id,owner))fail(409,`Fila ${row}: no se puede sustituir un padrino con documentación asociada.`);
+            return {id:id||randomUUID(),old,firstName,lastName,groupId,data};
+          });
+          const summary={total:prepared.length,created:prepared.filter(item=>!item.old).length,updated:prepared.filter(item=>item.old).length,groups:new Set(prepared.map(item=>item.groupId)).size};
+          if(!b.commit)return json(res,200,summary);
+          s.transaction(()=>{
+            for(const item of prepared) {
+              if(item.old)s.run('UPDATE people SET first_name=?,last_name=?,group_id=?,data=?,version=version+1,updated_at=? WHERE id=?',item.firstName,item.lastName,item.groupId,JSON.stringify(item.data),new Date(now()).toISOString(),item.id);
+              else s.run('INSERT INTO people (id,first_name,last_name,group_id,data,updated_at) VALUES (?,?,?,?,?,?)',item.id,item.firstName,item.lastName,item.groupId,JSON.stringify(item.data),new Date(now()).toISOString());
+              s.audit(user.id,item.old?'person.import-update':'person.import-create',item.id);
+            }
+            s.ensureStaffed();
+          });
+          return json(res,200,summary);
         }
         if (path==='/api/groups' && method==='GET') {
           const gs=s.all('SELECT * FROM groups ORDER BY name').filter(g=>user.role==='admin'||s.canRead(user,g.id));
