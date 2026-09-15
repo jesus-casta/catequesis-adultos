@@ -139,6 +139,28 @@ spec('Alta completa: conserva curso de comunión y contactos responsables',async
   assert.equal((await req('/api/people',{method:'POST',auth,data:{firstName:'Correo',lastName:'Inválido',groupId:createdGroup.value.id,data:{guardians:[{name:'Tutor',email:'incorrecto'}]}}})).status,400);
   assert.throws(()=>personalData({guardians:[{name:'Uno',primary:true},{name:'Dos',primary:true}]}),/Solo un tutor/);
 });
+spec('Excel: previsualiza e importa fichas de forma atómica dentro del megagrupo',async({req,login,app})=>{
+  const auth=await login('ana');
+  const existing=(await req('/api/people/p-1',{auth})).value;
+  const people=[
+    {reference:'p-1',id:'p-1',firstName:existing.firstName,lastName:existing.lastName,groupId:'g-conf',data:{...existing.data,city:'Ciudad importada'}},
+    {reference:'NUEVO-1',id:'',firstName:'Nueva',lastName:'Desde Excel',groupId:'g-first',data:{email:'nueva@example.test',guardians:[]}}
+  ];
+  const preview=await req('/api/catecheses/adults/import',{method:'POST',auth,data:{people,commit:false}});
+  assert.equal(preview.status,200,JSON.stringify(preview.value));assert.deepEqual(preview.value,{total:2,created:1,updated:1,groups:2});
+  assert.equal(app.store.get("SELECT json_extract(data,'$.city') city FROM people WHERE id='p-1'").city,'Ciudad de ejemplo');
+  const imported=await req('/api/catecheses/adults/import',{method:'POST',auth,data:{people,commit:true}});
+  assert.equal(imported.status,200,JSON.stringify(imported.value));assert.equal(app.store.get("SELECT json_extract(data,'$.city') city FROM people WHERE id='p-1'").city,'Ciudad importada');
+  assert.equal(app.store.get("SELECT COUNT(*) n FROM people WHERE first_name='Nueva' AND last_name='Desde Excel'").n,1);
+});
+spec('Excel: respeta permisos y no aplica parcialmente un archivo inválido',async({req,login,app})=>{
+  const catechist=await login('ana'),reader=await login('consulta');
+  const valid={reference:'NUEVO-1',id:'',firstName:'Primera',lastName:'Válida',groupId:'g-conf',data:{}};
+  const outside={reference:'NUEVO-2',id:'',firstName:'Fuera',lastName:'De ámbito',groupId:'g-second',data:{}};
+  assert.equal((await req('/api/catecheses/adults/import',{method:'POST',auth:reader,data:{people:[valid],commit:false}})).status,403);
+  assert.equal((await req('/api/catecheses/adults/import',{method:'POST',auth:catechist,data:{people:[valid,outside],commit:true}})).status,403);
+  assert.equal(app.store.get("SELECT COUNT(*) n FROM people WHERE last_name='Válida'").n,0);
+});
 spec('CU-08: editar y leer, sin sobreescritura simultánea',async({req,login})=>{
   const auth=await login();const p=(await req('/api/people/p-1',{auth})).value;
   const payload=updatePerson(p,{city:'Localidad de prueba'});
