@@ -364,6 +364,7 @@ tr:hover {background:#fbfcf8;}
 .feedback-prompt p {font-size:12px;}
 .edit-dialog {padding:25px 0 0;width:calc(100% - 32px);max-width:530px!important;max-height:90dvh;display:flex;flex-direction:column;gap:15px;background:#fafbf7;}
 .edit-dialog.wide {max-width:760px!important;}
+.edit-dialog:has(#person-group) {max-width:760px!important;}
 .edit-dialog>.dialog-header {padding:0 26px;}
 .edit-dialog h2 {font-family:Georgia,serif;font-size:25px;font-weight:400;padding-right:35px;}
 .edit-dialog .muted {font-size:12px;}
@@ -381,6 +382,16 @@ tr:hover {background:#fbfcf8;}
 .family-field {display:flex;flex-direction:column;gap:8px;}
 .family-field label {font-size:11px;color:#7c8c69;}
 .family-field input {font-size:12px;}
+.contact-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;}
+.contact-grid fieldset,.other-contact {display:flex;flex-direction:column;gap:8px;border:1px solid #e1e6d8;border-radius:9px;padding:15px;}
+.family-contact-summary {margin-top:20px;}
+.family-contact-summary>p {font-size:12px;margin:9px 0;}
+.family-contact-summary .contact-grid>div {border-top:1px solid #e6eadf;padding-top:12px;}
+.family-contact-summary small {color:#7f8e70;overflow-wrap:anywhere;}
+.responsibility-editor {display:flex;flex-direction:column;gap:16px;border-top:1px solid #e1e6d8;padding-top:18px;}
+.guardian-card {border:1px solid #dfe5d7;border-radius:10px;padding:16px;background:#fff;}
+.guardian-actions {display:flex;align-items:center;justify-content:space-between;margin-top:8px;}
+@media(max-width:600px){.contact-grid{grid-template-columns:1fr}}
 .form-footer {display:flex;justify-content:flex-end;gap:10px;padding:18px 27px;border-top:1px solid #e2e7d8;background:#f4f6ef;border-radius:0 0 10px 10px;}
 .form-footer .button {font-size:12px;}
 .upload-zone {border:1px dashed #b7c5a4;border-radius:10px;padding:23px;background:#f2f6e9;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;color:#809762;}

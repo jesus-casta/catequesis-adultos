@@ -274,13 +274,13 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           return json(res,200,ps.map(p=>s.presentPerson(p)));
         }
         if(path==='/api/people'&&method==='POST') {
-          admin(user);keys(b,['firstName','lastName','groupId','allowDuplicate']);
+          admin(user);keys(b,['firstName','lastName','groupId','data','allowDuplicate']);
           const first=text(b.firstName,'Nombre',{required:true,max:100}),last=text(b.lastName,'Apellidos',{required:true,max:160});group(b.groupId);
           const duplicate=s.all('SELECT first_name,last_name FROM people').some(p=>p.first_name.toLocaleLowerCase('es')===first.toLocaleLowerCase('es')&&p.last_name.toLocaleLowerCase('es')===last.toLocaleLowerCase('es'));
           if(duplicate&&b.allowDuplicate!==true) fail(409,'Existe una ficha con el mismo nombre y apellidos. Revisa el listado; solo confirma el duplicado si es otra persona.');
           const id=randomUUID();s.transaction(()=>{
-            s.run('INSERT INTO people (id,first_name,last_name,group_id,data,updated_at) VALUES (?,?,?,?,?,?)',id,first,last,b.groupId,JSON.stringify(personalData({})),new Date(now()).toISOString());
-            s.ensureStaffed();s.audit(user.id,'person.create-minimal',id);
+            s.run('INSERT INTO people (id,first_name,last_name,group_id,data,updated_at) VALUES (?,?,?,?,?,?)',id,first,last,b.groupId,JSON.stringify(personalData(b.data??{})),new Date(now()).toISOString());
+            s.ensureStaffed();s.audit(user.id,'person.create',id);
           });return json(res,201,{id});
         }
         const assignment=path.match(/^\/api\/people\/([^/]+)\/group$/);

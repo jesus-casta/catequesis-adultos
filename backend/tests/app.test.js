@@ -128,6 +128,17 @@ spec('CU-06: alta mínima incompleta, grupo obligatorio y duplicado explícito',
   const a=await login();const p=(await req(`/api/people/${r.value.id}`,{auth:a})).value;
   assert.equal(p.data.baptism,'unknown');assert.equal(p.documents.length,0);
 });
+spec('Alta completa: conserva curso de comunión y contactos responsables',async({req,login})=>{
+  const auth=await login('admin');
+  const group={name:'Comunión · 2.º',parish:'San Francisco de Asís',day:'Miércoles',startTime:'17:00',endTime:'18:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistIds:['u-luis']};
+  const createdGroup=await req('/api/groups',{method:'POST',auth,data:group});assert.equal(createdGroup.status,201);
+  const data={communionYear:'2',guardians:[{name:'Padre Prueba',relationship:'Padre',phone:'600000001',email:'padre@example.test',primary:false},{name:'Madre Prueba',relationship:'Madre',phone:'600000002',email:'madre@example.test',primary:false},{name:'Abuela Prueba',relationship:'Abuela',phone:'600000003',email:'abuela@example.test',primary:true}]};
+  const created=await req('/api/people',{method:'POST',auth,data:{firstName:'Infantil',lastName:'Prueba',groupId:createdGroup.value.id,data}});assert.equal(created.status,201,JSON.stringify(created.value));
+  const person=(await req(`/api/people/${created.value.id}`,{auth})).value;
+  assert.equal(person.data.communionYear,'2');assert.equal(person.data.guardians.length,3);assert.equal(person.data.guardians[2].name,'Abuela Prueba');assert.equal(person.data.guardians[0].email,'padre@example.test');
+  assert.equal((await req('/api/people',{method:'POST',auth,data:{firstName:'Correo',lastName:'Inválido',groupId:createdGroup.value.id,data:{guardians:[{name:'Tutor',email:'incorrecto'}]}}})).status,400);
+  assert.throws(()=>personalData({guardians:[{name:'Uno',primary:true},{name:'Dos',primary:true}]}),/Solo un tutor/);
+});
 spec('CU-08: editar y leer, sin sobreescritura simultánea',async({req,login})=>{
   const auth=await login();const p=(await req('/api/people/p-1',{auth})).value;
   const payload=updatePerson(p,{city:'Localidad de prueba'});

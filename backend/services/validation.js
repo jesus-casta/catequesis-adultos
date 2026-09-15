@@ -7,7 +7,7 @@ export const ITINERARIES = ['confirmation', 'baptism-1', 'baptism-2', 'first-com
 export const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 export const DOC_TYPES = ['birth', 'baptism', 'sponsor-confirmation', 'registration'];
 export const OWNER_TYPES = ['participant', 'baptismSponsor', 'confirmationSponsor'];
-export const FIELDS = ['birthDate', 'birthPlace', 'phone', 'email', 'address', 'city', 'province', 'postalCode', 'country', 'baptism', 'communion', 'confirmation', 'father', 'fatherBirth', 'mother', 'motherBirth', 'paternalGrandfather', 'paternalGrandfatherBirth', 'paternalGrandmother', 'paternalGrandmotherBirth', 'maternalGrandfather', 'maternalGrandfatherBirth', 'maternalGrandmother', 'maternalGrandmotherBirth', 'baptismSponsor', 'confirmationSponsor'];
+export const FIELDS = ['birthDate', 'birthPlace', 'phone', 'email', 'address', 'city', 'province', 'postalCode', 'country', 'baptism', 'communion', 'confirmation', 'communionYear', 'responsibleContact', 'father', 'fatherBirth', 'fatherPhone', 'fatherEmail', 'mother', 'motherBirth', 'motherPhone', 'motherEmail', 'otherGuardian', 'otherGuardianRelationship', 'otherGuardianPhone', 'otherGuardianEmail', 'paternalGrandfather', 'paternalGrandfatherBirth', 'paternalGrandmother', 'paternalGrandmotherBirth', 'maternalGrandfather', 'maternalGrandfatherBirth', 'maternalGrandmother', 'maternalGrandmotherBirth', 'baptismSponsor', 'confirmationSponsor', 'guardians'];
 export function object(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail(400, 'Se esperaba un objeto de datos.');
   return value;
@@ -36,11 +36,22 @@ export function version(value, record) {
 export function personalData(value) {
   keys(value, FIELDS);
   const result = {};
-  for (const key of FIELDS) {
+  for (const key of FIELDS.filter(key=>key!=='guardians')) {
     if (['baptism', 'communion', 'confirmation'].includes(key)) result[key] = choice(value[key] ?? 'unknown', ['yes', 'no', 'unknown'], key);
+    else if (key === 'communionYear') result[key] = choice(value[key] ?? '', ['', '1', '2', '3'], 'Curso de Primera Comunión');
+    else if (key === 'responsibleContact') result[key] = choice(value[key] ?? '', ['', 'father', 'mother', 'both', 'other'], 'Responsable familiar');
     else result[key] = text(value[key] ?? '', key, { max: key === 'address' ? 300 : 160 });
   }
-  if (result.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result.email)) fail(400, 'El correo electrónico no es válido.');
+  if(!Array.isArray(value.guardians??[]) || (value.guardians??[]).length>10)fail(400,'La lista de tutores no es válida.');
+  result.guardians=(value.guardians??[]).map((guardian,index)=>{
+    keys(guardian,['name','relationship','phone','email','primary']);
+    const item={name:text(guardian.name??'',`Tutor ${index+1}: nombre`,{required:true}),relationship:text(guardian.relationship??'',`Tutor ${index+1}: parentesco`),phone:text(guardian.phone??'',`Tutor ${index+1}: teléfono`,{max:40}),email:text(guardian.email??'',`Tutor ${index+1}: correo`),primary:guardian.primary===true};
+    if(guardian.primary!==undefined&&typeof guardian.primary!=='boolean')fail(400,`Tutor ${index+1}: contacto principal no válido.`);
+    if(item.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item.email))fail(400,`Tutor ${index+1}: el correo electrónico no es válido.`);
+    return item;
+  });
+  if(result.guardians.filter(guardian=>guardian.primary).length>1)fail(400,'Solo un tutor puede ser el contacto principal.');
+  for (const key of ['email','fatherEmail','motherEmail','otherGuardianEmail']) if (result[key] && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result[key])) fail(400, 'Uno de los correos electrónicos no es válido.');
   if (result.birthDate) {
     const d = new Date(`${result.birthDate}T12:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(result.birthDate) || Number.isNaN(d.valueOf()) || d.toISOString().slice(0, 10) !== result.birthDate || result.birthDate > new Date().toISOString().slice(0, 10) || result.birthDate < '1900-01-01') fail(400, 'La fecha de nacimiento no es válida.');
