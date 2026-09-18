@@ -248,6 +248,19 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             catechists:s.all("SELECT u.id,u.name,u.phone,u.email,u.version,EXISTS(SELECT 1 FROM user_photos up WHERE up.user_id=u.id) AS hasPhoto FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1 ORDER BY u.name",g.id)})));
         }
         const groupMatch=path.match(/^\/api\/groups\/([^/]+)$/);
+        if(groupMatch&&method==='DELETE') {
+          admin(user);keys(b,['version','confirmation']);
+          s.transaction(()=>{
+            const g=s.get('SELECT * FROM groups WHERE id=?',groupMatch[1]);if(!g)fail(404,'Grupo no disponible.');version(b.version,g);
+            if(b.confirmation!==g.name)fail(400,'Escribe el nombre del grupo para confirmar el borrado.');
+            if(s.get('SELECT 1 FROM people WHERE group_id=?',g.id))fail(409,'El grupo todavía tiene personas. Cámbialas de grupo o borra sus fichas antes de eliminarlo.');
+            s.run('UPDATE users SET version=version+1 WHERE id IN (SELECT user_id FROM scopes WHERE group_id=?)',g.id);
+            s.run('DELETE FROM scopes WHERE group_id=?',g.id);
+            s.run('DELETE FROM groups WHERE id=?',g.id);
+            s.audit(user.id,'group.delete',g.id);
+          });
+          return json(res,200,{ok:true});
+        }
         if ((path==='/api/groups'&&method==='POST') || (groupMatch&&method==='PUT')) {
           admin(user); keys(b,['name','parish','day','startTime','endTime','itinerary','catechistIds','version','catechesisId']);
           const g=groupData(b,groupMatch?group(groupMatch[1]):null), id=groupMatch?.[1] ?? randomUUID();
@@ -334,6 +347,17 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         const personMatch=path.match(/^\/api\/people\/([^/]+)$/);
         if(personMatch&&method==='GET') return json(res,200,s.presentPerson(s.person(user,personMatch[1])));
+        if(personMatch&&method==='DELETE') {
+          admin(user);keys(b,['version','confirmation']);
+          s.transaction(()=>{
+            const p=s.person(user,personMatch[1],true);version(b.version,p);
+            if(b.confirmation!==`${p.first_name} ${p.last_name}`)fail(400,'Escribe el nombre completo para confirmar el borrado.');
+            s.run('DELETE FROM files WHERE person_id=?',p.id);
+            s.run('DELETE FROM people WHERE id=?',p.id);
+            s.audit(user.id,'person.delete',p.id);
+          });
+          return json(res,200,{ok:true});
+        }
         if(personMatch&&method==='PUT') {
           const p=s.person(user,personMatch[1],true);keys(b,['firstName','lastName','data','version']);version(b.version,p);
           const first=text(b.firstName,'Nombre',{required:true,max:100}),last=text(b.lastName,'Apellidos',{required:true,max:160}),data=personalData(b.data);

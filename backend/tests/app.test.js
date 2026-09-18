@@ -474,3 +474,45 @@ spec('Megagrupos: administración crea y edita, sin conceder acceso implícito',
   const changed=(await req('/api/catecheses',{auth})).value.find(c=>c.id===id);
   assert.equal(changed.name,'Santa María — Catequesis');assert.equal(changed.groupCount,2);
 });
+
+spec('Borrado de fichas: solo admin, confirmación, versión y eliminación de archivos',async({app,req,login})=>{
+  const auth=await login('admin'),catechist=await login('ana'),reader=await login('consulta');
+  let p=(await req('/api/people/p-1',{auth})).value;
+  const confirmation=`${p.firstName} ${p.lastName}`;
+  for(const denied of [catechist,reader])assert.equal((await req('/api/people/p-1',{method:'DELETE',auth:denied,data:{version:p.version,confirmation}})).status,403);
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation:'otro nombre'}})).status,400);
+  const file=await req('/api/people/p-1/documents',{method:'POST',auth,data:{name:'bautismo.pdf',base64:PDF,type:'baptism',owner:'participant',version:p.version}});
+  assert.equal(file.status,201);
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation}})).status,409);
+  p=(await req('/api/people/p-1',{auth})).value;
+  assert.equal((await req('/api/people/p-1/photo',{method:'POST',auth,data:{name:'foto.png',base64:PNG,version:p.version}})).status,201);
+  p=(await req('/api/people/p-1',{auth})).value;
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation},headers:{'X-CSRF-Token':'incorrecto'}})).status,403);
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation}})).status,200);
+  assert.equal((await req('/api/people/p-1',{auth})).status,404);
+  assert.equal((await req(`/api/files/${file.value.id}`,{auth})).status,404);
+  assert.equal(app.store.get('SELECT count(*) n FROM files WHERE person_id=?','p-1').n,0);
+  assert.equal(app.store.get("SELECT count(*) n FROM audit WHERE action='person.delete' AND entity_id='p-1'").n,1);
+  assert.equal((await req('/api/people/p-2',{auth})).status,200);
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation}})).status,404);
+});
+
+spec('Borrado de grupos: impide borrar con personas, limpia asignaciones y conserva usuarios',async({app,req,login})=>{
+  const auth=await login('admin'),catechist=await login('ana'),reader=await login('consulta');
+  const occupied=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
+  assert.equal((await req('/api/groups/g-conf',{method:'DELETE',auth,data:{version:occupied.version,confirmation:occupied.name}})).status,409);
+  assert.equal(app.store.get("SELECT count(*) n FROM people WHERE group_id='g-conf'").n,3);
+  const created=await req('/api/groups',{method:'POST',auth,data:{name:'Grupo para borrar',parish:'Ejemplo',day:'Lunes',startTime:'17:00',endTime:'18:00',itinerary:'confirmation',catechesisId:'adults',catechistIds:['u-ana']}});
+  assert.equal(created.status,201);
+  const id=created.value.id,g=(await req('/api/groups',{auth})).value.find(g=>g.id===id),data={version:g.version,confirmation:g.name};
+  for(const denied of [catechist,reader])assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth:denied,data})).status,403);
+  assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data:{...data,confirmation:'otro'}})).status,400);
+  assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data:{...data,version:0}})).status,409);
+  const before=app.store.user('u-ana').version;
+  assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data})).status,200);
+  assert.equal(app.store.get('SELECT id FROM groups WHERE id=?',id),undefined);
+  assert.equal(app.store.get('SELECT count(*) n FROM scopes WHERE group_id=?',id).n,0);
+  assert.equal(app.store.user('u-ana').version,before+1);
+  assert.equal(app.store.get("SELECT count(*) n FROM audit WHERE action='group.delete' AND entity_id=?",id).n,1);
+  assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data})).status,404);
+});
