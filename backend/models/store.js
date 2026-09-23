@@ -85,6 +85,9 @@ export function openStore(path, demo, bootstrap) {
   if (!db.prepare('PRAGMA table_info(groups)').all().some(column=>column.name==='catechesis_id')) {
     db.exec("ALTER TABLE groups ADD COLUMN catechesis_id TEXT NOT NULL DEFAULT 'adults'");
   }
+  if (!db.prepare('PRAGMA table_info(groups)').all().some(column=>column.name==='sort_position')) {
+    db.exec('ALTER TABLE groups ADD COLUMN sort_position INTEGER');
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS groups_catechesis ON groups(catechesis_id);
     CREATE TRIGGER IF NOT EXISTS groups_catechesis_insert BEFORE INSERT ON groups
     WHEN NOT EXISTS(SELECT 1 FROM catecheses WHERE id=NEW.catechesis_id)

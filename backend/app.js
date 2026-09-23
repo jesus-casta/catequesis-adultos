@@ -242,10 +242,25 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           return json(res,200,summary);
         }
         if (path==='/api/groups' && method==='GET') {
-          const gs=s.all('SELECT * FROM groups ORDER BY name').filter(g=>user.role==='admin'||s.canRead(user,g.id));
+          const gs=s.all('SELECT * FROM groups ORDER BY sort_position IS NULL,sort_position,name,id').filter(g=>user.role==='admin'||s.canRead(user,g.id));
           return json(res,200,gs.map(g=>({id:g.id,catechesisId:g.catechesis_id,name:g.name,parish:g.parish,day:g.day,startTime:g.start_time,endTime:g.end_time,itinerary:g.itinerary,version:g.version,
             count:s.get('SELECT COUNT(*) AS n FROM people WHERE group_id=?',g.id).n,
             catechists:s.all("SELECT u.id,u.name,u.phone,u.email,u.version,EXISTS(SELECT 1 FROM user_photos up WHERE up.user_id=u.id) AS hasPhoto FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1 ORDER BY u.name",g.id)})));
+        }
+        if(path==='/api/groups/order'&&method==='PUT') {
+          admin(user);keys(b,['catechesisId','groups']);
+          const catechesisId=text(b.catechesisId,'Catequesis',{required:true});
+          if(!Array.isArray(b.groups)||!b.groups.length)fail(400,'Indica el orden completo de los grupos.');
+          for(const entry of b.groups){keys(entry,['id','version']);text(entry.id,'Grupo',{required:true});}
+          s.transaction(()=>{
+            const current=s.all('SELECT * FROM groups WHERE catechesis_id=?',catechesisId);
+            const byId=new Map(current.map(g=>[g.id,g]));
+            if(b.groups.length!==current.length||new Set(b.groups.map(g=>g.id)).size!==current.length||b.groups.some(g=>!byId.has(g.id)))fail(409,'Los grupos han cambiado. Actualiza la página y vuelve a ordenarlos.');
+            for(const entry of b.groups)version(entry.version,byId.get(entry.id));
+            b.groups.forEach((entry,index)=>s.run('UPDATE groups SET sort_position=?,version=version+1 WHERE id=?',index,entry.id));
+            s.audit(user.id,'groups.reorder',catechesisId);
+          });
+          return json(res,200,{ok:true});
         }
         const groupMatch=path.match(/^\/api\/groups\/([^/]+)$/);
         if(groupMatch&&method==='DELETE') {

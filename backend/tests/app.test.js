@@ -516,3 +516,37 @@ spec('Borrado de grupos: impide borrar con personas, limpia asignaciones y conse
   assert.equal(app.store.get("SELECT count(*) n FROM audit WHERE action='group.delete' AND entity_id=?",id).n,1);
   assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data})).status,404);
 });
+
+spec('Orden de grupos: guarda el orden completo, respeta permisos y rechaza conflictos',async({req,login,app})=>{
+  const auth=await login('admin'),catechist=await login('ana'),reader=await login('consulta');
+  const original=(await req('/api/groups',{auth})).value;
+  const reversed=[...original].reverse();
+  const data={catechesisId:'adults',groups:reversed.map(({id,version})=>({id,version}))};
+  for(const restricted of [catechist,reader])assert.equal((await req('/api/groups/order',{auth:restricted,method:'PUT',data})).status,403);
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data:{...data,groups:[data.groups[0],data.groups[0],data.groups[2]]}})).status,409);
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data:{...data,groups:data.groups.slice(1)}})).status,409);
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data:{...data,catechesisId:'san-francisco'}})).status,409);
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data:{...data,groups:[null]}})).status,400);
+  assert.deepEqual((await req('/api/groups',{auth})).value.map(g=>g.id),original.map(g=>g.id));
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data})).status,200);
+  const updated=(await req('/api/groups',{auth})).value;
+  assert.deepEqual(updated.map(g=>g.id),reversed.map(g=>g.id));
+  assert(updated.every(g=>g.version===original.find(old=>old.id===g.id).version+1));
+  assert.deepEqual((await req('/api/groups',{auth:reader})).value.map(g=>g.id),reversed.map(g=>g.id));
+  const positions=app.store.all('SELECT id,sort_position,version FROM groups ORDER BY sort_position');
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data})).status,409);
+  assert.deepEqual(app.store.all('SELECT id,sort_position,version FROM groups ORDER BY sort_position'),positions);
+  assert.equal(app.store.get("SELECT COUNT(*) n FROM audit WHERE action='groups.reorder'").n,1);
+});
+
+spec('Traslado por arrastre: solo administración, versión vigente y datos conservados',async({req,login})=>{
+  const auth=await login('admin'),catechist=await login('ana');
+  const before=(await req('/api/people/p-4',{auth})).value;
+  const data={groupId:'g-second',version:before.version};
+  assert.equal((await req('/api/people/p-4/group',{auth:catechist,method:'PUT',data})).status,403);
+  assert.equal((await req('/api/people/p-4/group',{auth,method:'PUT',data})).status,200);
+  const after=(await req('/api/people/p-4',{auth})).value;
+  assert.equal(after.groupId,'g-second');assert.deepEqual(after.data,before.data);assert.deepEqual(after.documents,before.documents);
+  assert.equal((await req('/api/people/p-4/group',{auth,method:'PUT',data:{...data,groupId:before.groupId}})).status,409);
+  assert.equal((await req('/api/people/p-4',{auth})).value.groupId,'g-second');
+});
