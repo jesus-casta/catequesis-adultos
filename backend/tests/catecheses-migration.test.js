@@ -52,3 +52,24 @@ test('Megagrupos: los nombres editados y los nuevos registros persisten al reini
   assert(!s.publicUser(s.user('u-reader')).catechesisIds.includes('new'));
   s.db.close();
 });
+
+test('Calendario: la actualización conserva las comunidades y las sesiones persisten',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'calendar-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const path=join(dir,'test.sqlite');let s=openStore(path,true);
+  s.db.exec('DROP TABLE calendar_events');s.db.close();
+  s=openStore(path,false);assert.equal(s.get('SELECT COUNT(*) n FROM groups').n,3);
+  s.run("INSERT INTO calendar_events (id,group_id,date,start_time,end_time,topic,created_by) VALUES ('e','g-conf','2026-10-07','19:00','20:00','La fe','u-admin')");
+  s.db.close();s=openStore(path,false);
+  assert.equal(s.get("SELECT topic FROM calendar_events WHERE id='e'").topic,'La fe');s.db.close();
+});
+
+test('Celebraciones: las sesiones anteriores conservan datos y reciben tipo sesión',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'celebrations-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const path=join(dir,'test.sqlite');let s=openStore(path,true);
+  s.run("INSERT INTO calendar_events (id,group_id,date,start_time,end_time,topic,created_by) VALUES ('old','g-conf','2026-10-07','19:00','20:00','Tema anterior','u-admin')");
+  s.db.exec('ALTER TABLE calendar_events DROP COLUMN kind');s.db.close();
+  s=openStore(path,false);
+  assert.equal(s.get("SELECT kind FROM calendar_events WHERE id='old'").kind,'session');
+  assert.equal(s.get("SELECT topic FROM calendar_events WHERE id='old'").topic,'Tema anterior');
+  s.db.close();
+});

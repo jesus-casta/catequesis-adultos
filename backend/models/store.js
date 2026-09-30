@@ -41,10 +41,22 @@ export function openStore(path, demo, bootstrap) {
       user_id TEXT NOT NULL REFERENCES users(id), catechesis_id TEXT NOT NULL REFERENCES catecheses(id),
       PRIMARY KEY(user_id,catechesis_id)
     );
+    CREATE TABLE IF NOT EXISTS managed_catecheses (
+      user_id TEXT NOT NULL REFERENCES users(id), catechesis_id TEXT NOT NULL REFERENCES catecheses(id),
+      PRIMARY KEY(user_id,catechesis_id)
+    );
     CREATE TABLE IF NOT EXISTS groups (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, parish TEXT NOT NULL, day TEXT NOT NULL,
       start_time TEXT NOT NULL, end_time TEXT NOT NULL, itinerary TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1
     );
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id TEXT PRIMARY KEY, group_id TEXT NOT NULL REFERENCES groups(id),
+      date TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL,
+      topic TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','cancelled')),
+      version INTEGER NOT NULL DEFAULT 1, created_by TEXT NOT NULL REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS calendar_events_date ON calendar_events(date,group_id);
     CREATE TABLE IF NOT EXISTS user_photos (
       user_id TEXT PRIMARY KEY REFERENCES users(id), mime TEXT NOT NULL, bytes BLOB NOT NULL
     );
@@ -72,6 +84,9 @@ export function openStore(path, demo, bootstrap) {
       id TEXT PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, entity_id TEXT NOT NULL, created_at TEXT NOT NULL
     );
   `);
+  if(!db.prepare('PRAGMA table_info(calendar_events)').all().some(c=>c.name==='kind')) {
+    db.exec("ALTER TABLE calendar_events ADD COLUMN kind TEXT NOT NULL DEFAULT 'session' CHECK(kind IN ('session','celebration'))");
+  }
   // Add contact fields to existing databases without replacing their records.
   const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(column => column.name));
   for (const column of ['phone', 'email']) {
@@ -104,8 +119,9 @@ export function openStore(path, demo, bootstrap) {
     },
     audit(actor, action, entity) { this.run('INSERT INTO audit VALUES (?, ?, ?, ?, ?)', randomUUID(), actor, action, entity, new Date().toISOString()); },
     user(id) { return this.get('SELECT * FROM users WHERE id = ?', id); },
-    publicUser(u) { return { id:u.id, username:u.username, name:u.name, phone:u.phone, email:u.email, hasPhoto:!!this.get('SELECT 1 FROM user_photos WHERE user_id=?',u.id), role:u.role, isCatechist:u.role==='catechist'||(u.role==='admin'&&!!u.is_catechist), active:!!u.active, version:u.version, catechesisIds:this.all('SELECT catechesis_id FROM reader_catecheses WHERE user_id=? ORDER BY catechesis_id',u.id).map(c=>c.catechesis_id), groupIds:this.all('SELECT group_id FROM scopes WHERE user_id = ?',u.id).map(g=>g.group_id) }; },
-    canRead(u, groupId) { return u.role === 'admin' || (u.role === 'reader' && !!this.get('SELECT 1 FROM reader_catecheses rc JOIN groups g ON g.catechesis_id=rc.catechesis_id WHERE rc.user_id=? AND g.id=?',u.id,groupId)) || (u.role === 'catechist' && !!this.get('SELECT 1 FROM scopes WHERE user_id = ? AND group_id = ?',u.id,groupId)); },
+    publicUser(u) { return { id:u.id, username:u.username, name:u.name, phone:u.phone, email:u.email, hasPhoto:!!this.get('SELECT 1 FROM user_photos WHERE user_id=?',u.id), role:u.role, managedCatechesisIds:this.all('SELECT catechesis_id FROM managed_catecheses WHERE user_id=?',u.id).map(c=>c.catechesis_id), isCatechist:u.role==='catechist'||(u.role==='admin'&&!!u.is_catechist), active:!!u.active, version:u.version, catechesisIds:this.all('SELECT catechesis_id FROM reader_catecheses WHERE user_id=? ORDER BY catechesis_id',u.id).map(c=>c.catechesis_id), groupIds:this.all('SELECT group_id FROM scopes WHERE user_id = ?',u.id).map(g=>g.group_id) }; },
+    canManage(u, catechesisId) { return u.role==='admin' || (u.role==='catechist' && !!this.get('SELECT 1 FROM managed_catecheses WHERE user_id=? AND catechesis_id=?',u.id,catechesisId)); },
+    canRead(u, groupId) { return this.canManage(u,this.get('SELECT catechesis_id FROM groups WHERE id=?',groupId)?.catechesis_id??'') || (u.role === 'reader' && !!this.get('SELECT 1 FROM reader_catecheses rc JOIN groups g ON g.catechesis_id=rc.catechesis_id WHERE rc.user_id=? AND g.id=?',u.id,groupId)) || (u.role === 'catechist' && !!this.get('SELECT 1 FROM scopes WHERE user_id = ? AND group_id = ?',u.id,groupId)); },
     person(u, id, edit = false) {
       const p = this.get('SELECT * FROM people WHERE id = ?', id);
       if (!p || !this.canRead(u, p.group_id)) fail(404, 'Ficha no disponible en tu ámbito.');
@@ -119,7 +135,7 @@ export function openStore(path, demo, bootstrap) {
     ensureStaffed() {
       const row = this.get(`SELECT g.id FROM groups g WHERE EXISTS(SELECT 1 FROM people p WHERE p.group_id=g.id)
         AND NOT EXISTS(SELECT 1 FROM scopes s JOIN users u ON u.id=s.user_id WHERE s.group_id=g.id AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1)`);
-      if (row) fail(409, 'Un grupo con personas no puede quedar sin catequista activo. Asigna un sustituto primero.');
+      if (row) fail(409, 'Una comunidad con personas no puede quedar sin catequista activo. Asigna un sustituto primero.');
     }
   };
   if (!store.get('SELECT 1 FROM metadata WHERE key = ?', 'schema')) {

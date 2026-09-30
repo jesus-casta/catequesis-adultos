@@ -7,7 +7,7 @@ export const ITINERARIES = ['confirmation', 'baptism-1', 'baptism-2', 'first-com
 export const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 export const DOC_TYPES = ['birth', 'baptism', 'sponsor-confirmation', 'registration'];
 export const OWNER_TYPES = ['participant', 'baptismSponsor', 'confirmationSponsor'];
-export const FIELDS = ['birthDate', 'birthPlace', 'phone', 'email', 'address', 'city', 'province', 'postalCode', 'country', 'baptism', 'communion', 'confirmation', 'father', 'fatherBirth', 'mother', 'motherBirth', 'paternalGrandfather', 'paternalGrandfatherBirth', 'paternalGrandmother', 'paternalGrandmotherBirth', 'maternalGrandfather', 'maternalGrandfatherBirth', 'maternalGrandmother', 'maternalGrandmotherBirth', 'baptismSponsor', 'confirmationSponsor'];
+export const FIELDS = ['birthDate', 'birthPlace', 'phone', 'email', 'address', 'city', 'province', 'postalCode', 'country', 'baptism', 'communion', 'confirmation', 'father', 'fatherBirth', 'mother', 'motherBirth', 'paternalGrandfather', 'paternalGrandfatherBirth', 'paternalGrandmother', 'paternalGrandmotherBirth', 'maternalGrandfather', 'maternalGrandfatherBirth', 'maternalGrandmother', 'maternalGrandmotherBirth', 'baptismSponsor', 'confirmationSponsor', 'baptismParish'];
 export function object(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail(400, 'Se esperaba un objeto de datos.');
   return value;
@@ -27,7 +27,7 @@ export function choice(value, allowed, label) {
   return value;
 }
 export function ids(value) {
-  if (!Array.isArray(value) || value.length > 100 || value.some(v => typeof v !== 'string')) fail(400, 'La asignación de grupos o catequistas no es válida.');
+  if (!Array.isArray(value) || value.length > 100 || value.some(v => typeof v !== 'string')) fail(400, 'La asignación de comunidades o catequistas no es válida.');
   return [...new Set(value)];
 }
 export function version(value, record) {

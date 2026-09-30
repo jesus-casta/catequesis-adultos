@@ -1,4 +1,4 @@
-import { createResetMailer } from './services/mail.js';
+import { calendarData, presentEvent, weeklyDates } from './services/calendar.js';
 import { createServer } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
@@ -12,7 +12,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MIME = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json','.rsc':'text/x-component; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.ico':'image/x-icon','.woff2':'font/woff2','.txt':'text/plain; charset=utf-8'};
 const SESSION_MS = 8 * 60 * 60 * 1000;
 
-export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesis.sqlite'), demo = false, staticRoot = resolve(ROOT, 'dist/client'), now = Date.now, publicOrigin = '', production = false, sendPasswordReset = createResetMailer() } = {}) {
+export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesis.sqlite'), demo = false, staticRoot = resolve(ROOT, 'dist/client'), now = Date.now, publicOrigin = '', production = false } = {}) {
   let external;
   if(publicOrigin) {
     external=new URL(publicOrigin);
@@ -33,6 +33,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     return { user, session };
   }
   function admin(user) { if (user.role !== 'admin') fail(403, 'Esta operación corresponde a administración.'); }
+  function manage(user, catechesisId) { if(!s.canManage(user,catechesisId)) fail(403,'No administras este megagrupo.'); }
   function bodyLimit(path) { return /\/(documents|photo)$/.test(path) ? 7 * 1024 * 1024 + 65536 : 65536; }
   async function body(req, path) {
     if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) fail(415, 'Se requiere contenido JSON.');
@@ -43,7 +44,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     try { const value = JSON.parse(Buffer.concat(chunks).toString('utf8')); keys(value,Object.keys(value)); return value; }
     catch (error) { if (error instanceof AppError) throw error; fail(400, 'La solicitud no contiene datos válidos.'); }
   }
-  function group(id) { const g = s.get('SELECT * FROM groups WHERE id=?',id); if (!g) fail(400,'Selecciona un grupo existente.'); return g; }
+  function group(id) { const g = s.get('SELECT * FROM groups WHERE id=?',id); if (!g) fail(400,'Selecciona una comunidad existente.'); return g; }
   function groupData(b, old) {
     const out = {
       name:text(b.name,'Nombre',{required:true}), parish:text(b.parish,'Parroquia',{required:true}),
@@ -54,7 +55,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     out.catechesisId=text(b.catechesisId??old?.catechesis_id??'adults','Catequesis',{required:true,max:80});
     const catechesis=s.get('SELECT * FROM catecheses WHERE id=?',out.catechesisId);
     if(!catechesis)fail(400,'Selecciona una catequesis existente.');
-    if(old&&old.catechesis_id!==out.catechesisId)fail(400,'No se puede cambiar la catequesis de un grupo existente.');
+    if(old&&old.catechesis_id!==out.catechesisId)fail(400,'No se puede cambiar la catequesis de una comunidad existente.');
     if(catechesis.kind!=='general'&&(catechesis.kind==='first-communion')!==(out.itinerary==='first-communion'))fail(400,'El itinerario no corresponde a esta catequesis.');
     for (const id of out.catechistIds) { const u=s.user(id); if (!u?.active || !(u.role==='catechist'||(u.role==='admin'&&u.is_catechist))) fail(400,'Solo pueden asignarse catequistas activos.'); }
     return out;
@@ -69,16 +70,18 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     const isCatechist=role==='catechist'||(role==='admin'&&(b.isCatechist??!!old?.is_catechist));
     const catechesisIds=role==='reader'?ids(b.catechesisIds??(old?.role==='reader'?s.publicUser(old).catechesisIds:[])):[];
     for(const id of catechesisIds)if(!s.get('SELECT 1 FROM catecheses WHERE id=?',id))fail(400,'Selecciona una catequesis existente.');
+    const managedCatechesisIds=role==='catechist'?ids(b.managedCatechesisIds??(old?s.publicUser(old).managedCatechesisIds:[])):[];
+    for(const id of managedCatechesisIds)if(!s.get('SELECT 1 FROM catecheses WHERE id=?',id))fail(400,'Selecciona una catequesis existente.');
     const requestedGroups=ids(b.groupIds);
     const groupIds=role==='reader'?[]:requestedGroups; groupIds.forEach(group);
-    if (role==='admin' && !isCatechist && groupIds.length) fail(400,'Administración tiene acceso a todos los grupos y no necesita asignaciones.');
+    if (role==='admin' && !isCatechist && groupIds.length) fail(400,'Administración tiene acceso a todas las comunidades y no necesita asignaciones.');
     const name=text(b.name,'Nombre',{required:true});
     const password=text(b.password ?? '', 'Contraseña',{max:128});
     if (password && password.length<12) fail(400,'La contraseña debe tener al menos 12 caracteres.');
     const phone=b.phone===undefined?undefined:text(b.phone,'Teléfono',{max:40});
     const email=b.email===undefined?undefined:text(b.email,'Correo electrónico',{max:160});
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400,'Introduce un correo electrónico válido.');
-    return {username,role,active:b.active,groupIds,catechesisIds,name,password,phone,email,isCatechist};
+    return {managedCatechesisIds,username,role,active:b.active,groupIds,catechesisIds,name,password,phone,email,isCatechist};
   }
   function current(req, csrf = false) {
     const a=auth(req);
@@ -104,46 +107,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
       if (req.headers['sec-fetch-site']==='cross-site') fail(403,'No se admite acceso desde otro sitio.');
       if(path==='/healthz'&&method==='GET'){s.get('SELECT 1');return json(res,200,{ok:true});}
       if (path==='/api/meta' && method==='GET') return json(res,200,{version:'0.1.0',demo:s.get("SELECT value FROM metadata WHERE key='demo'")?.value==='true',localOnly:!external,photoLimitMB:2,documentLimitMB:5});
-      if (['/api/forgot-password','/api/reset-password'].includes(path) && method==='POST') {
-        const b=await body(req,path);
-        for(const [key,value] of attempts)if(value.until<=now())attempts.delete(key);
-        const key=`recovery:${req.socket.remoteAddress}`;
-        const attempt=attempts.get(key)??{count:0,until:now()+300000};
-        if(attempt.count>=8)fail(429,'Demasiados intentos. Espera cinco minutos.');
-        attempts.set(key,{...attempt,count:attempt.count+1});
-        if(path==='/api/forgot-password') {
-          keys(b,['username']);
-          const username=text(b.username,'Usuario',{required:true,max:80}).toLowerCase();
-          if(!sendPasswordReset)fail(503,'La recuperación por correo no está disponible. Contacta con administración.');
-          const user=s.get('SELECT * FROM users WHERE username=? AND active=1',username);
-          s.run('DELETE FROM password_resets WHERE expires<=?',now());
-          if(user?.email) {
-            const token=randomBytes(32).toString('hex');
-            s.run('INSERT INTO password_resets VALUES (?,?,?,?,?)',hash(token),user.id,user.password_hash,user.email,now()+30*60*1000);
-            try {
-              await sendPasswordReset({to:user.email,url:`${external?.origin??url.origin}/#reset-password=${token}`});
-            } catch {
-              s.run('DELETE FROM password_resets WHERE token_hash=?',hash(token));
-              // Do not expose account existence or mail transport details.
-              console.error('No se pudo entregar un correo de recuperación.');
-            }
-          }
-          return json(res,200,{message:'Si el usuario tiene una cuenta activa con correo registrado, recibirá un enlace para recuperar la contraseña. Revisa también la carpeta de spam. Si no llega, contacta con administración.'});
-        }
-        keys(b,['token','password']);
-        const token=text(b.token,'Enlace',{required:true,max:64});
-        const password=text(b.password,'Contraseña',{required:true,max:128});
-        if(password.length<12)fail(400,'La contraseña debe tener al menos 12 caracteres.');
-        const reset=/^[a-f0-9]{64}$/.test(token)&&s.get('SELECT r.* FROM password_resets r JOIN users u ON u.id=r.user_id WHERE r.token_hash=? AND r.expires>? AND u.active=1 AND u.password_hash=r.password_hash AND u.email=r.email',hash(token),now());
-        if(!reset)fail(400,'El enlace no es válido o ha caducado. Solicita uno nuevo.');
-        s.transaction(()=>{
-          s.run('UPDATE users SET password_hash=?,version=version+1 WHERE id=?',passwordHash(password),reset.user_id);
-          s.run('DELETE FROM sessions WHERE user_id=?',reset.user_id);
-          s.run('DELETE FROM password_resets WHERE user_id=?',reset.user_id);
-          s.audit(reset.user_id,'password.reset',reset.user_id);
-        });
-        return json(res,200,{message:'Contraseña actualizada. Ya puedes iniciar sesión.'});
-      }
+      if (['/api/forgot-password','/api/reset-password'].includes(path)) fail(404,'Contacta con administración para cambiar tu contraseña.');
       if (path==='/api/login' && method==='POST') {
         const b=await body(req,path); keys(b,['username','password']);
         const username=text(b.username,'Usuario',{max:80}).toLowerCase();
@@ -176,9 +140,42 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           res.setHeader('Set-Cookie','catequesis_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
           return json(res,200,{ok:true});
         }
+        if(path==='/api/calendar'&&method==='GET') {
+          const month=url.searchParams.get('month');
+          if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month??''))fail(400,'Selecciona un mes válido.');
+          const events=s.all('SELECT * FROM calendar_events WHERE date>=? AND date<=? ORDER BY date,start_time,topic,id',`${month}-01`,`${month}-31`);
+          return json(res,200,events.filter(e=>s.canRead(user,e.group_id)).map(e=>presentEvent(e,s.canManage(user,group(e.group_id).catechesis_id))));
+        }
+        const eventMatch=path.match(/^\/api\/calendar\/([^/]+)$/);
+        if((path==='/api/calendar'&&method==='POST')||(eventMatch&&method==='PUT')) {
+          const old=eventMatch?s.get('SELECT * FROM calendar_events WHERE id=?',eventMatch[1]):null;
+          if(eventMatch) {
+            if(!old||!s.canRead(user,old.group_id))fail(404,'Sesión no disponible en tu ámbito.');
+            manage(user,group(old.group_id).catechesis_id);
+            version(b.version,old);
+          }
+          const {untilDate,...data}=b;
+          if(eventMatch&&untilDate!==undefined)fail(400,'Edita cada sesión por separado.');
+          const d=calendarData({...data,kind:data.kind??old?.kind??'session'});
+          manage(user,group(d.groupId).catechesis_id);
+          if(old&&old.group_id!==d.groupId)fail(400,'No se puede cambiar la comunidad de una sesión existente.');
+          const dates=untilDate===undefined?[d.date]:weeklyDates(d.date,untilDate);
+          const saved=[];
+          s.transaction(()=>{
+            for(const date of dates) {
+              if(d.status==='scheduled'&&s.get("SELECT 1 FROM calendar_events WHERE group_id=? AND date=? AND status='scheduled' AND start_time<? AND end_time>? AND id<>?",d.groupId,date,d.endTime,d.startTime,old?.id??''))fail(409,'Esta comunidad ya tiene una sesión o celebración en ese horario. Revisa el calendario; no se ha guardado ningún cambio.');
+              const id=old?.id??randomUUID();
+              if(old)s.run('UPDATE calendar_events SET date=?,start_time=?,end_time=?,topic=?,notes=?,status=?,kind=?,version=version+1 WHERE id=?',date,d.startTime,d.endTime,d.topic,d.notes,d.status,d.kind,id);
+              else s.run('INSERT INTO calendar_events (id,group_id,date,start_time,end_time,topic,notes,status,created_by,kind) VALUES (?,?,?,?,?,?,?,?,?,?)',id,d.groupId,date,d.startTime,d.endTime,d.topic,d.notes,d.status,user.id,d.kind);
+              s.audit(user.id,old?'calendar.update':'calendar.create',id);
+              saved.push(presentEvent(s.get('SELECT * FROM calendar_events WHERE id=?',id),true));
+            }
+          });
+          return json(res,old?200:201,{events:saved});
+        }
         const catechesisMatch=path.match(/^\/api\/catecheses\/([^/]+)$/);
         if((path==='/api/catecheses'&&method==='POST')||(catechesisMatch&&method==='PUT')) {
-          admin(user);keys(b,['name','parish','kind','version']);
+          if(catechesisMatch)manage(user,catechesisMatch[1]);else admin(user);keys(b,['name','parish','kind','version']);
           const name=text(b.name,'Nombre del megagrupo',{required:true,max:160});
           const parish=text(b.parish??'','Parroquia',{max:160});
           const kind=choice(b.kind,['adults','first-communion','general'],'Tipo de catequesis');
@@ -188,7 +185,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
               const old=s.get('SELECT * FROM catecheses WHERE id=?',id);
               if(!old)fail(404,'Megagrupo no encontrado.');
               version(b.version,old);
-              if(kind!=='general'&&s.all('SELECT itinerary FROM groups WHERE catechesis_id=?',id).some(g=>(kind==='first-communion')!==(g.itinerary==='first-communion')))fail(409,'El tipo elegido no admite los itinerarios de los grupos existentes.');
+              if(kind!=='general'&&s.all('SELECT itinerary FROM groups WHERE catechesis_id=?',id).some(g=>(kind==='first-communion')!==(g.itinerary==='first-communion')))fail(409,'El tipo elegido no admite los itinerarios de las comunidades existentes.');
               s.run('UPDATE catecheses SET name=?,parish=?,kind=?,version=version+1 WHERE id=?',name,parish,kind,id);
             } else s.run('INSERT INTO catecheses (id,name,parish,kind) VALUES (?,?,?,?)',id,name,parish,kind);
             s.audit(user.id,'catechesis.save',id);
@@ -197,7 +194,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         if(path==='/api/catecheses'&&method==='GET') {
           const visible=s.all('SELECT * FROM groups').filter(g=>s.canRead(user,g.id));
-          return json(res,200,s.all('SELECT * FROM catecheses ORDER BY id').filter(c=>user.role==='admin'||(user.role==='reader'&&s.get('SELECT 1 FROM reader_catecheses WHERE user_id=? AND catechesis_id=?',user.id,c.id))||visible.some(g=>g.catechesis_id===c.id)).map(c=>({...c,groupCount:visible.filter(g=>g.catechesis_id===c.id).length})));
+          return json(res,200,s.all('SELECT * FROM catecheses ORDER BY id').filter(c=>s.canManage(user,c.id)||(user.role==='reader'&&s.get('SELECT 1 FROM reader_catecheses WHERE user_id=? AND catechesis_id=?',user.id,c.id))||visible.some(g=>g.catechesis_id===c.id)).map(c=>({...c,canManage:s.canManage(user,c.id),groupCount:visible.filter(g=>g.catechesis_id===c.id).length})));
         }
         if (path==='/api/groups' && method==='GET') {
           const gs=s.all('SELECT * FROM groups ORDER BY name').filter(g=>user.role==='admin'||s.canRead(user,g.id));
@@ -207,13 +204,14 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         const groupMatch=path.match(/^\/api\/groups\/([^/]+)$/);
         if ((path==='/api/groups'&&method==='POST') || (groupMatch&&method==='PUT')) {
-          admin(user); keys(b,['name','parish','day','startTime','endTime','itinerary','catechistIds','version','catechesisId']);
+          keys(b,['name','parish','day','startTime','endTime','itinerary','catechistIds','version','catechesisId']);
           const g=groupData(b,groupMatch?group(groupMatch[1]):null), id=groupMatch?.[1] ?? randomUUID();
+          manage(user,g.catechesisId);
           s.transaction(()=>{
             const previous=s.all("SELECT sc.user_id FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1))",id).map(r=>r.user_id);
             if (groupMatch) {
               const old=group(id); version(b.version,old);
-              if (old.itinerary!==g.itinerary && s.get('SELECT 1 FROM people WHERE group_id=?',id)) fail(409,'El cambio de itinerario de un grupo con personas está pendiente de definir.');
+              if (old.itinerary!==g.itinerary && s.get('SELECT 1 FROM people WHERE group_id=?',id)) fail(409,'El cambio de itinerario de una comunidad con personas está pendiente de definir.');
               s.run('UPDATE groups SET name=?,parish=?,day=?,start_time=?,end_time=?,itinerary=?,version=version+1 WHERE id=?',g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,id);
               s.run("DELETE FROM scopes WHERE group_id=? AND user_id IN (SELECT id FROM users WHERE role='catechist' OR (role='admin' AND is_catechist=1))",id);
             } else s.run('INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary,catechesis_id) VALUES (?,?,?,?,?,?,?,?)',id,g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,g.catechesisId);
@@ -222,6 +220,10 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             s.ensureStaffed(); s.audit(user.id,'group.save',id);
           });
           return json(res,groupMatch?200:201,{id});
+        }
+        if(path==='/api/catechists'&&method==='GET') {
+          if(user.role!=='admin'&&!s.publicUser(user).managedCatechesisIds.length)fail(403,'Sin permiso.');
+          return json(res,200,s.all("SELECT * FROM users WHERE active=1 AND (role='catechist' OR (role='admin' AND is_catechist=1)) ORDER BY name").map(u=>({id:u.id,name:u.name,role:u.role,isCatechist:true,active:true})));
         }
         if (path==='/api/users'&&method==='GET') { admin(user); return json(res,200,s.all('SELECT * FROM users ORDER BY name').map(u=>s.publicUser(u))); }
         const userPhoto=path.match(/^\/api\/users\/([^/]+)\/photo$/);
@@ -245,7 +247,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         const userMatch=path.match(/^\/api\/users\/([^/]+)$/);
         if ((path==='/api/users'&&method==='POST')||(userMatch&&method==='PUT')) {
-          admin(user); keys(b,['username','name','role','active','password','groupIds','version','phone','email','isCatechist','catechesisIds']);
+          admin(user); keys(b,['username','name','role','active','password','groupIds','version','phone','email','isCatechist','catechesisIds','managedCatechesisIds']);
           const d=userData(b,userMatch?s.user(userMatch[1]):null), id=userMatch?.[1]??randomUUID();
           if (!userMatch&&!d.password) fail(400,'Introduce una contraseña inicial de al menos 12 caracteres.');
           const duplicate=s.get('SELECT id FROM users WHERE username=?',d.username);
@@ -260,6 +262,8 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             } else s.run('INSERT INTO users (id,username,name,role,active,password_hash) VALUES (?,?,?,?,?,?)',id,d.username,d.name,d.role,Number(d.active),passwordHash(d.password));
             s.run('UPDATE users SET is_catechist=? WHERE id=?',Number(d.isCatechist),id);
             s.run('UPDATE users SET phone=COALESCE(?,phone),email=COALESCE(?,email) WHERE id=?',d.phone??null,d.email??null,id);
+            s.run('DELETE FROM managed_catecheses WHERE user_id=?',id);
+            for(const c of d.managedCatechesisIds)s.run('INSERT INTO managed_catecheses VALUES (?,?)',id,c);
             s.run('DELETE FROM reader_catecheses WHERE user_id=?',id);
             for(const c of d.catechesisIds)s.run('INSERT INTO reader_catecheses VALUES (?,?)',id,c);
             for(const g of d.groupIds) s.run('INSERT INTO scopes VALUES (?,?)',id,g);
@@ -274,9 +278,9 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           return json(res,200,ps.map(p=>s.presentPerson(p)));
         }
         if(path==='/api/people'&&method==='POST') {
-          admin(user);keys(b,['firstName','lastName','groupId','allowDuplicate']);
+          keys(b,['firstName','lastName','groupId','allowDuplicate']);manage(user,group(b.groupId).catechesis_id);
           const first=text(b.firstName,'Nombre',{required:true,max:100}),last=text(b.lastName,'Apellidos',{required:true,max:160});group(b.groupId);
-          const duplicate=s.all('SELECT first_name,last_name FROM people').some(p=>p.first_name.toLocaleLowerCase('es')===first.toLocaleLowerCase('es')&&p.last_name.toLocaleLowerCase('es')===last.toLocaleLowerCase('es'));
+          const duplicate=s.all('SELECT first_name,last_name,group_id FROM people').filter(p=>s.canRead(user,p.group_id)).some(p=>p.first_name.toLocaleLowerCase('es')===first.toLocaleLowerCase('es')&&p.last_name.toLocaleLowerCase('es')===last.toLocaleLowerCase('es'));
           if(duplicate&&b.allowDuplicate!==true) fail(409,'Existe una ficha con el mismo nombre y apellidos. Revisa el listado; solo confirma el duplicado si es otra persona.');
           const id=randomUUID();s.transaction(()=>{
             s.run('INSERT INTO people (id,first_name,last_name,group_id,data,updated_at) VALUES (?,?,?,?,?,?)',id,first,last,b.groupId,JSON.stringify(personalData({})),new Date(now()).toISOString());
@@ -285,8 +289,8 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         const assignment=path.match(/^\/api\/people\/([^/]+)\/group$/);
         if(assignment&&method==='PUT') {
-          admin(user);keys(b,['groupId','version']);group(b.groupId);
-          const p=s.get('SELECT * FROM people WHERE id=?',assignment[1]);if(!p)fail(404,'Ficha no encontrada.');version(b.version,p);
+          keys(b,['groupId','version']);manage(user,group(b.groupId).catechesis_id);
+          const p=s.get('SELECT * FROM people WHERE id=?',assignment[1]);if(!p)fail(404,'Ficha no encontrada.');manage(user,group(p.group_id).catechesis_id);version(b.version,p);
           s.transaction(()=>{s.run('UPDATE people SET group_id=?,version=version+1,updated_at=? WHERE id=?',b.groupId,new Date(now()).toISOString(),p.id);s.ensureStaffed();s.audit(user.id,'person.move-group',p.id);});
           return json(res,200,{ok:true});
         }

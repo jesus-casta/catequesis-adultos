@@ -4,11 +4,11 @@ Esta aplicación es una primera propuesta funcional. Puedes comentar cada bloque
 
 ## 1. Recorrerla como catequista
 
-Entra como `ana` usando la contraseña de demostración del README. Verás cinco personas: tres en confirmación y dos en primero de bautismo y comunión. Las personas de segundo no aparecen porque Ana no tiene asignado ese grupo.
+Entra como `ana` usando la contraseña de demostración del README. Verás cinco personas: tres en confirmación y dos en primero de bautismo y comunión. Las personas de segundo no aparecen porque Ana no tiene asignada esa comunidad.
 
 Busca «Clara», abre su ficha y recorre sus pestañas:
 
-- **Datos personales:** identificación, contacto, domicilio y grupo.
+- **Datos personales:** identificación, contacto, domicilio y comunidad.
 - **Sacramentos y familia:** estados «sí», «no» y «sin comprobar»; padrinos y datos familiares.
 - **Documentación:** archivos realmente recibidos, separados por titular.
 
@@ -30,7 +30,7 @@ El navegador puede ofrecer descargar, imprimir o copiar el archivo. Esta aplicac
 
 La foto nueva pasa a ser la visible. Sus versiones anteriores se conservan internamente, sin interfaz de historial. Los documentos nuevos no sustituyen los anteriores. El mismo contenido para el mismo tipo y titular se rechaza como duplicado. Ningún archivo se declara válido por el mero hecho de subirlo.
 
-## 3. Compartir un grupo
+## 3. Compartir una comunidad
 
 Sal y entra como `luis`. Luis puede consultar y modificar las mismas personas de confirmación, pero ve segundo en lugar de primero. Si editas la ficha de Clara, Ana verá los cambios al actualizar.
 
@@ -44,11 +44,11 @@ Entra como `consulta`. Su ámbito inicial es confirmación. Verás tres personas
 
 Entra como `admin`.
 
-- **Personas y asignaciones:** solo muestra nombre, apellidos y grupo. Permite crear una ficha mínima y cambiar su grupo. Los demás datos los completa el catequista.
-- **Grupos:** crea o modifica nombre, parroquia, día, hora inicial/final e itinerario. Selecciona uno o varios catequistas.
-- **Usuarios:** crea cuentas, asigna perfil y grupos, cambia contraseña o desactiva. Dejar un catequista o lector sin grupos significa que no verá ninguna ficha.
+- **Personas y asignaciones:** solo muestra nombre, apellidos y comunidad. Permite crear una ficha mínima y cambiar su comunidad. Los demás datos los completa el catequista.
+- **Comunidades:** crea o modifica nombre, parroquia, día, hora inicial/final e itinerario. Selecciona uno o varios catequistas.
+- **Usuarios:** crea cuentas, asigna perfil y comunidades, cambia contraseña o desactiva. Dejar un catequista o lector sin comunidades significa que no verá ninguna ficha.
 
-Los grupos en preparación pueden estar vacíos y sin catequistas. Para asignarles personas deben tener al menos un catequista activo. No se puede retirar al último catequista de un grupo ocupado ni dejar el sistema sin administrador activo.
+Las comunidades en preparación pueden estar vacías y sin catequistas. Para asignarles personas deben tener al menos un catequista activo. No se puede retirar al último catequista de una comunidad ocupada ni dejar el sistema sin administrador activo.
 
 ### Probar un traslado
 
@@ -56,15 +56,15 @@ Asigna a Diego a segundo. Ana dejará de poder abrir su ficha y documentos; Luis
 
 ### Probar una nueva cuenta
 
-Crea un usuario de consulta sin grupos, con contraseña de 12 caracteres o más. Entra con él: su listado estará vacío. Asigna después un grupo desde administración y vuelve a entrar. Ya podrá consultar ese grupo.
+Crea un usuario de consulta sin comunidades, con contraseña de 12 caracteres o más. Entra con él: su listado estará vacío. Asigna después una comunidad desde administración y vuelve a entrar. Ya podrá consultar esa comunidad.
 
 ## 6. Preguntas útiles para comentar
 
 1. ¿La ficha está dividida de forma cómoda? ¿Qué dato falta o sobra?
-2. ¿Quieres que las altas las haga administración o cada catequista en sus grupos?
-3. ¿El arzobispado consultará todos los grupos o un conjunto asignado?
-4. ¿Primero y segundo como grupos separados reflejan vuestra organización?
+2. ¿Quieres que las altas las haga administración o cada catequista en sus comunidades?
+3. ¿El arzobispado consultará todas las comunidades o un conjunto asignado?
+4. ¿Primero y segundo como comunidades separadas reflejan vuestra organización?
 5. ¿Qué documentos son obligatorios según el participante y los padrinos?
-6. ¿Qué debe conservarse cuando cambian grupo, curso o padrinos?
+6. ¿Qué debe conservarse cuando cambian comunidad, curso o padrinos?
 
 No hay que responder todo de una vez. El Excel real, preferiblemente anonimizado, sigue pendiente y será necesario antes de diseñar su importación.

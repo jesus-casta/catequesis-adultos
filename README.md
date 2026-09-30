@@ -1,6 +1,6 @@
 # Catequesis de adultos
 
-Aplicación React y Node.js para gestionar grupos, catecúmenos, catequistas, fotos y documentos. Preparación de despliegue: 6 de septiembre de 2026.
+Aplicación React y Node.js para gestionar comunidades, catecúmenos, catequistas, fotos y documentos. Preparación de despliegue: 6 de septiembre de 2026.
 
 ## Arrancar en este ordenador
 
@@ -21,12 +21,12 @@ npm run check
 
 ## Perfiles
 
-- Visualizador: todos los grupos, fichas, fotos y documentos, solo lectura. Es exclusivo.
-- Catequista: consulta y completa las fichas de sus grupos; sube fotos y documentos.
-- Admin: gestión completa de usuarios, grupos, asignaciones, fichas y archivos.
-- Catequista y Admin: una única cuenta y ficha, visible en ambos bloques de Usuarios. Las asignaciones indican qué grupos acompaña; mantiene administración global.
+- Visualizador: todas las comunidades, fichas, fotos y documentos, solo lectura. Es exclusivo.
+- Catequista: consulta y completa las fichas de sus comunidades; sube fotos y documentos.
+- Admin: gestión completa de usuarios, comunidades, asignaciones, fichas y archivos.
+- Catequista y Admin: una única cuenta y ficha, visible en ambos bloques de Usuarios. Las asignaciones indican qué comunidades acompaña; mantiene administración global.
 
-Personas se abren en ventanas con cierre y navegación anterior/siguiente. Las tarjetas de grupo abren sus integrantes. La ficha de catequista incluye nombre, teléfono, correo y foto. Fotos JPG/PNG de hasta 2 MB; documentos PDF/JPG/PNG de hasta 5 MB.
+Personas se abren en ventanas con cierre y navegación anterior/siguiente. Las tarjetas de comunidad abren sus integrantes. La ficha de catequista incluye nombre, teléfono, correo y foto. Fotos JPG/PNG de hasta 2 MB; documentos PDF/JPG/PNG de hasta 5 MB.
 
 ## Datos y operación
 
@@ -49,22 +49,42 @@ El estado actual está en [docs/ESTADO.md](docs/ESTADO.md). Funciones de evoluci
 
 ### Recuperación de contraseña
 
-El login incluye «¿Has olvidado tu contraseña?». El usuario introduce su nombre de acceso y recibe un enlace en el correo de su ficha (Administración → Usuarios). Las cuentas sin correo deben contactar con administración.
+La recuperación por correo está deshabilitada. El usuario debe contactar con el administrador general, que cambia la contraseña en **Usuarios → Editar → Nueva contraseña**. El cambio cierra las sesiones anteriores. También se conserva el comando `npm run db:reset-password -- USUARIO` para el operador del servidor.
 
-El envío utiliza la API HTTPS de Amazon SES desde el backend, sin `sendmail` ni servidor SMTP en Docker. Configura `CATEQUESIS_MAIL_FROM`, `AWS_REGION` y permisos AWS de envío. Sigue [la guía de SES y Docker](docs/SES.md) para completar AWS, actualizar el contenedor y probar la entrega. Sin remitente configurado, el formulario indica que debe contactarse con administración.
+### Administradores de comunidad
 
-Los enlaces caducan en 30 minutos, se guardan únicamente como hash y son de un solo uso. Cambiar la contraseña revoca todas las sesiones y enlaces de recuperación de esa cuenta. También se invalidan si cambia su correo o contraseña. La respuesta de solicitud no revela si existe el usuario y se limita la frecuencia de las solicitudes.
+En **Usuarios → Editar**, selecciona **Administrador de comunidad** y marca los megagrupos en **Administrador de comunidad: megagrupos que podrá editar**. La cuenta se identifica como administrador de comunidad y puede editar esos megagrupos, crear y editar sus comunidades, asignar catequistas y gestionar sus personas y documentos. El permiso incluye las comunidades futuras y se retira inmediatamente al desmarcar el megagrupo. Las asignaciones adicionales como catequista conservan sus permisos habituales.
 
-### Catequesis y grupos
+Solo el administrador general crea megagrupos y gestiona cuentas, contraseñas y permisos. Las bases existentes incorporan la tabla de permisos sin cambiar las asignaciones actuales.
 
-Después de iniciar sesión se elige entre **Catequesis de adultos** y **Primera Comunión — San Francisco de Asís**. Dentro de cada catequesis, administración puede crear los grupos que necesite y asignar personas y catequistas. El menú «Catequesis» permite volver a elegir. Las listas y búsquedas de personas quedan limitadas a la catequesis seleccionada. Usuarios y permisos siguen siendo globales; las asignaciones identifican la catequesis de cada grupo.
+### Catequesis y comunidades
 
-Al actualizar, todos los grupos existentes se incorporan automáticamente a adultos, conservando sus identificadores, personas, documentos y permisos. San Francisco comienza sin grupos. La base de demostración conserva sus tres grupos de ejemplo; en producción se conservan exactamente los grupos existentes. No hay que reinicializar la base. Haz una copia de seguridad antes de desplegar y reconstruye el servicio `adultos` de Docker.
+Después de iniciar sesión se elige entre **Catequesis de adultos** y **Primera Comunión — San Francisco de Asís**. Dentro de cada catequesis, administración puede crear las comunidades que necesite y asignar personas y catequistas. El menú «Catequesis» permite volver a elegir. Las listas y búsquedas de personas quedan limitadas a la catequesis seleccionada. Usuarios y permisos siguen siendo globales; las asignaciones identifican la catequesis de cada comunidad.
 
-Los catequistas solo ven las catequesis que contienen grupos asignados a ellos; no obtienen acceso al resto de grupos de esa catequesis. Administración mantiene su acceso global. Los visualizadores consultan únicamente las catequesis asignadas. La creación y edición de grupos corresponde a administración. Los grupos nuevos de San Francisco usan el itinerario Primera Comunión; sus nombres permiten indicar curso, turno o nivel. No se trasladan grupos completos entre catequesis desde el formulario.
+Al actualizar, todas las comunidades existentes se incorporan automáticamente a adultos, conservando sus identificadores, personas, documentos y permisos. San Francisco comienza sin comunidades. La base de demostración conserva sus tres comunidades de ejemplo; en producción se conservan exactamente las comunidades existentes. No hay que reinicializar la base. Haz una copia de seguridad antes de desplegar y reconstruye el servicio `adultos` de Docker.
 
-En **Usuarios → Editar → Visualizador**, marca uno o varios «Megagrupos que podrá consultar». La selección incluye los grupos actuales y futuros de cada catequesis. Sin selección, el visualizador no puede consultar grupos, fichas, documentos ni fotos de catequistas. Al retirar una catequesis, las siguientes peticiones al servidor pierden el acceso inmediatamente, incluso con una sesión abierta.
+Los catequistas solo ven las catequesis que contienen comunidades asignadas a ellos; no obtienen acceso al resto de comunidades de esa catequesis. Administración mantiene su acceso global. Los visualizadores consultan únicamente las catequesis asignadas. La creación y edición de comunidades corresponde a administración. Las comunidades nuevas de San Francisco usan el itinerario Primera Comunión; sus nombres permiten indicar curso, turno o nivel. No se trasladan comunidades completas entre catequesis desde el formulario.
+
+En **Usuarios → Editar → Visualizador**, marca uno o varios «Megagrupos que podrá consultar». La selección incluye las comunidades actuales y futuras de cada catequesis. Sin selección, el visualizador no puede consultar comunidades, fichas, documentos ni fotos de catequistas. Al retirar una catequesis, las siguientes peticiones al servidor pierden el acceso inmediatamente, incluso con una sesión abierta.
 
 La migración conserva una única vez el acceso de los visualizadores existentes a las catequesis actuales. Administración puede restringirlo después. Las cuentas nuevas no reciben permisos por defecto y reiniciar el servidor no restaura permisos retirados.
 
-Administración dispone de **Nuevo megagrupo** y **Editar megagrupo** en la pantalla inicial de catequesis. Permiten definir nombre, parroquia e itinerarios admitidos (todos, adultos o Primera Comunión). Los dos megagrupos iniciales también son editables. Cambiar nombre o parroquia conserva las fichas, grupos y permisos existentes; la parroquia sirve como propuesta para grupos nuevos. Se rechaza un cambio de tipo incompatible con los grupos existentes. Los nuevos megagrupos deben asignarse explícitamente a los visualizadores desde Usuarios.
+Administración dispone de **Nuevo megagrupo** y **Editar megagrupo** en la pantalla inicial de catequesis. Permiten definir nombre, parroquia e itinerarios admitidos (todos, adultos o Primera Comunión). Los dos megagrupos iniciales también son editables. Cambiar nombre o parroquia conserva las fichas, comunidades y permisos existentes; la parroquia sirve como propuesta para comunidades nuevas. Se rechaza un cambio de tipo incompatible con las comunidades existentes. Los nuevos megagrupos deben asignarse explícitamente a los visualizadores desde Usuarios.
+
+### Ordenar catecúmenos
+
+En el listado, **Ordenar por** permite elegir **Nombre (A–Z)** o **Curso (nivel y letra)**. El curso se toma del nombre de la comunidad, por ejemplo `1.º A`, `1.º B`, `2.º A`. Si no indica nivel, se usa el del itinerario cuando se conoce; las comunidades sin nivel quedan al final. Dentro de cada comunidad se ordena por nombre y apellidos. La búsqueda, el filtro y las flechas de las fichas respetan el orden elegido.
+
+### Calendario por comunidades
+
+**Mi calendario** muestra un mes y la agenda con el tema, horario y notas de cada sesión. Se puede acceder desde el menú o desde **Comunidades → Ver calendario de esta comunidad**. En una catequesis concreta se muestran sus comunidades; desde la pantalla inicial se pueden consultar todas las comunidades accesibles.
+
+El administrador general y los administradores de comunidad pueden pulsar **Programar actividad**, elegir una comunidad, la primera fecha y **Repetir hasta** para crear sesiones cada siete días (máximo 53 por operación). El horario se propone desde la comunidad. También pueden crear una sesión individual. El tema inicial puede ser «Tema pendiente»; después se edita cada fecha por separado. Las notas son visibles para quienes tienen acceso a esa comunidad.
+
+Los catequistas consultan las sesiones de sus comunidades y los visualizadores las de sus megagrupos asignados. El servidor verifica el ámbito en cada petición. Los cambios de tema, fecha y horario requieren permiso de administración; los festivos se pueden marcar como **Cancelada** y siguen visibles. Los cambios en una fecha no afectan al resto de la serie. No se permiten sesiones programadas que se solapen en una misma comunidad; si una serie encuentra un conflicto, no guarda ninguna de sus fechas.
+
+La actualización crea automáticamente la tabla de calendario sin modificar los registros existentes. Los horarios representan la hora local de la comunidad; la recurrencia semanal conserva el día al cambiar el horario de verano.
+
+El calendario también permite **Celebraciones**. En **Programar actividad**, selecciona el tipo y escribe el nombre de la celebración, fecha, horario y notas. Se distinguen visualmente de las sesiones y pueden ser individuales o semanales. Solo el administrador general y los administradores de comunidad pueden crear, editar o cancelar actividades, siempre dentro de su ámbito; catequistas y visualizadores solo consultan.
+
+En **Ficha → Sacramentos**, el campo opcional **Parroquia de bautismo** permite registrar dónde fue bautizado el niño. Se guarda con los datos sacramentales, separado de la parroquia de su comunidad, y aparece también en la consulta de la ficha. Las fichas existentes lo muestran sin indicar hasta que se complete.
