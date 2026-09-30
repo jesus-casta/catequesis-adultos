@@ -128,6 +128,39 @@ spec('CU-06: alta mínima incompleta, grupo obligatorio y duplicado explícito',
   const a=await login();const p=(await req(`/api/people/${r.value.id}`,{auth:a})).value;
   assert.equal(p.data.baptism,'unknown');assert.equal(p.documents.length,0);
 });
+spec('Alta completa: conserva curso de comunión y contactos responsables',async({req,login})=>{
+  const auth=await login('admin');
+  const group={name:'Comunión · 2.º',parish:'San Francisco de Asís',day:'Miércoles',startTime:'17:00',endTime:'18:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistIds:['u-luis']};
+  const createdGroup=await req('/api/groups',{method:'POST',auth,data:group});assert.equal(createdGroup.status,201);
+  const data={communionYear:'2',guardians:[{name:'Padre Prueba',relationship:'Padre',phone:'600000001',email:'padre@example.test',primary:false},{name:'Madre Prueba',relationship:'Madre',phone:'600000002',email:'madre@example.test',primary:false},{name:'Abuela Prueba',relationship:'Abuela',phone:'600000003',email:'abuela@example.test',primary:true}]};
+  const created=await req('/api/people',{method:'POST',auth,data:{firstName:'Infantil',lastName:'Prueba',groupId:createdGroup.value.id,data}});assert.equal(created.status,201,JSON.stringify(created.value));
+  const person=(await req(`/api/people/${created.value.id}`,{auth})).value;
+  assert.equal(person.data.communionYear,'2');assert.equal(person.data.guardians.length,3);assert.equal(person.data.guardians[2].name,'Abuela Prueba');assert.equal(person.data.guardians[0].email,'padre@example.test');
+  assert.equal((await req('/api/people',{method:'POST',auth,data:{firstName:'Correo',lastName:'Inválido',groupId:createdGroup.value.id,data:{guardians:[{name:'Tutor',email:'incorrecto'}]}}})).status,400);
+  assert.throws(()=>personalData({guardians:[{name:'Uno',primary:true},{name:'Dos',primary:true}]}),/Solo un tutor/);
+});
+spec('Excel: previsualiza e importa fichas de forma atómica dentro del megagrupo',async({req,login,app})=>{
+  const auth=await login('ana');
+  const existing=(await req('/api/people/p-1',{auth})).value;
+  const people=[
+    {reference:'p-1',id:'p-1',firstName:existing.firstName,lastName:existing.lastName,groupId:'g-conf',data:{...existing.data,city:'Ciudad importada'}},
+    {reference:'NUEVO-1',id:'',firstName:'Nueva',lastName:'Desde Excel',groupId:'g-first',data:{email:'nueva@example.test',guardians:[]}}
+  ];
+  const preview=await req('/api/catecheses/adults/import',{method:'POST',auth,data:{people,commit:false}});
+  assert.equal(preview.status,200,JSON.stringify(preview.value));assert.deepEqual(preview.value,{total:2,created:1,updated:1,groups:2});
+  assert.equal(app.store.get("SELECT json_extract(data,'$.city') city FROM people WHERE id='p-1'").city,'Ciudad de ejemplo');
+  const imported=await req('/api/catecheses/adults/import',{method:'POST',auth,data:{people,commit:true}});
+  assert.equal(imported.status,200,JSON.stringify(imported.value));assert.equal(app.store.get("SELECT json_extract(data,'$.city') city FROM people WHERE id='p-1'").city,'Ciudad importada');
+  assert.equal(app.store.get("SELECT COUNT(*) n FROM people WHERE first_name='Nueva' AND last_name='Desde Excel'").n,1);
+});
+spec('Excel: respeta permisos y no aplica parcialmente un archivo inválido',async({req,login,app})=>{
+  const catechist=await login('ana'),reader=await login('consulta');
+  const valid={reference:'NUEVO-1',id:'',firstName:'Primera',lastName:'Válida',groupId:'g-conf',data:{}};
+  const outside={reference:'NUEVO-2',id:'',firstName:'Fuera',lastName:'De ámbito',groupId:'g-second',data:{}};
+  assert.equal((await req('/api/catecheses/adults/import',{method:'POST',auth:reader,data:{people:[valid],commit:false}})).status,403);
+  assert.equal((await req('/api/catecheses/adults/import',{method:'POST',auth:catechist,data:{people:[valid,outside],commit:true}})).status,403);
+  assert.equal(app.store.get("SELECT COUNT(*) n FROM people WHERE last_name='Válida'").n,0);
+});
 spec('CU-08: editar y leer, sin sobreescritura simultánea',async({req,login})=>{
   const auth=await login();const p=(await req('/api/people/p-1',{auth})).value;
   const payload=updatePerson(p,{city:'Localidad de prueba'});
@@ -510,4 +543,91 @@ spec('Ficha: parroquia de bautismo se guarda y consulta sin cambiar la parroquia
   const reader=await login('consulta');
   assert.equal((await req(`/api/people/${p.id}`,{auth:reader})).value.data.baptismParish,'Santa María del Camino');
   assert.equal((await req(`/api/people/${p.id}`,{auth:reader,method:'PUT',data:updatePerson(saved.value,{baptismParish:'Otra'})})).status,403);
+});
+
+spec('Borrado de fichas: solo admin, confirmación, versión y eliminación de archivos',async({app,req,login})=>{
+  const auth=await login('admin'),catechist=await login('ana'),reader=await login('consulta');
+  let p=(await req('/api/people/p-1',{auth})).value;
+  const confirmation=`${p.firstName} ${p.lastName}`;
+  for(const denied of [catechist,reader])assert.equal((await req('/api/people/p-1',{method:'DELETE',auth:denied,data:{version:p.version,confirmation}})).status,403);
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation:'otro nombre'}})).status,400);
+  const file=await req('/api/people/p-1/documents',{method:'POST',auth,data:{name:'bautismo.pdf',base64:PDF,type:'baptism',owner:'participant',version:p.version}});
+  assert.equal(file.status,201);
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation}})).status,409);
+  p=(await req('/api/people/p-1',{auth})).value;
+  assert.equal((await req('/api/people/p-1/photo',{method:'POST',auth,data:{name:'foto.png',base64:PNG,version:p.version}})).status,201);
+  p=(await req('/api/people/p-1',{auth})).value;
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation},headers:{'X-CSRF-Token':'incorrecto'}})).status,403);
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation}})).status,200);
+  assert.equal((await req('/api/people/p-1',{auth})).status,404);
+  assert.equal((await req(`/api/files/${file.value.id}`,{auth})).status,404);
+  assert.equal(app.store.get('SELECT count(*) n FROM files WHERE person_id=?','p-1').n,0);
+  assert.equal(app.store.get("SELECT count(*) n FROM audit WHERE action='person.delete' AND entity_id='p-1'").n,1);
+  assert.equal((await req('/api/people/p-2',{auth})).status,200);
+  assert.equal((await req('/api/people/p-1',{method:'DELETE',auth,data:{version:p.version,confirmation}})).status,404);
+});
+
+spec('Borrado de grupos: impide borrar con personas, limpia asignaciones y conserva usuarios',async({app,req,login})=>{
+  const auth=await login('admin'),catechist=await login('ana'),reader=await login('consulta');
+  const occupied=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
+  assert.equal((await req('/api/groups/g-conf',{method:'DELETE',auth,data:{version:occupied.version,confirmation:occupied.name}})).status,409);
+  assert.equal(app.store.get("SELECT count(*) n FROM people WHERE group_id='g-conf'").n,3);
+  const created=await req('/api/groups',{method:'POST',auth,data:{name:'Grupo para borrar',parish:'Ejemplo',day:'Lunes',startTime:'17:00',endTime:'18:00',itinerary:'confirmation',catechesisId:'adults',catechistIds:['u-ana']}});
+  assert.equal(created.status,201);
+  const id=created.value.id,g=(await req('/api/groups',{auth})).value.find(g=>g.id===id),data={version:g.version,confirmation:g.name};
+  for(const denied of [catechist,reader])assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth:denied,data})).status,403);
+  assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data:{...data,confirmation:'otro'}})).status,400);
+  assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data:{...data,version:0}})).status,409);
+  const before=app.store.user('u-ana').version;
+  assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data})).status,200);
+  assert.equal(app.store.get('SELECT id FROM groups WHERE id=?',id),undefined);
+  assert.equal(app.store.get('SELECT count(*) n FROM scopes WHERE group_id=?',id).n,0);
+  assert.equal(app.store.user('u-ana').version,before+1);
+  assert.equal(app.store.get("SELECT count(*) n FROM audit WHERE action='group.delete' AND entity_id=?",id).n,1);
+  assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data})).status,404);
+});
+
+spec('Orden de grupos: guarda el orden completo, respeta permisos y rechaza conflictos',async({req,login,app})=>{
+  const auth=await login('admin'),catechist=await login('ana'),reader=await login('consulta');
+  const original=(await req('/api/groups',{auth})).value;
+  const reversed=[...original].reverse();
+  const data={catechesisId:'adults',groups:reversed.map(({id,version})=>({id,version}))};
+  for(const restricted of [catechist,reader])assert.equal((await req('/api/groups/order',{auth:restricted,method:'PUT',data})).status,403);
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data:{...data,groups:[data.groups[0],data.groups[0],data.groups[2]]}})).status,409);
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data:{...data,groups:data.groups.slice(1)}})).status,409);
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data:{...data,catechesisId:'san-francisco'}})).status,409);
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data:{...data,groups:[null]}})).status,400);
+  assert.deepEqual((await req('/api/groups',{auth})).value.map(g=>g.id),original.map(g=>g.id));
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data})).status,200);
+  const updated=(await req('/api/groups',{auth})).value;
+  assert.deepEqual(updated.map(g=>g.id),reversed.map(g=>g.id));
+  assert(updated.every(g=>g.version===original.find(old=>old.id===g.id).version+1));
+  assert.deepEqual((await req('/api/groups',{auth:reader})).value.map(g=>g.id),reversed.map(g=>g.id));
+  const positions=app.store.all('SELECT id,sort_position,version FROM groups ORDER BY sort_position');
+  assert.equal((await req('/api/groups/order',{auth,method:'PUT',data})).status,409);
+  assert.deepEqual(app.store.all('SELECT id,sort_position,version FROM groups ORDER BY sort_position'),positions);
+  assert.equal(app.store.get("SELECT COUNT(*) n FROM audit WHERE action='groups.reorder'").n,1);
+});
+
+spec('Traslado por arrastre: solo administración, versión vigente y datos conservados',async({req,login})=>{
+  const auth=await login('admin'),catechist=await login('ana');
+  const before=(await req('/api/people/p-4',{auth})).value;
+  const data={groupId:'g-second',version:before.version};
+  assert.equal((await req('/api/people/p-4/group',{auth:catechist,method:'PUT',data})).status,403);
+  assert.equal((await req('/api/people/p-4/group',{auth,method:'PUT',data})).status,200);
+  const after=(await req('/api/people/p-4',{auth})).value;
+  assert.equal(after.groupId,'g-second');assert.deepEqual(after.data,before.data);assert.deepEqual(after.documents,before.documents);
+  assert.equal((await req('/api/people/p-4/group',{auth,method:'PUT',data:{...data,groupId:before.groupId}})).status,409);
+  assert.equal((await req('/api/people/p-4',{auth})).value.groupId,'g-second');
+});
+
+
+spec('Borrado de comunidad: conserva las actividades del calendario',async({req,login,app})=>{
+  const auth=await login('admin');
+  const created=await req('/api/groups',{method:'POST',auth,data:{name:'Comunidad con calendario',parish:'Ejemplo',day:'Lunes',startTime:'17:00',endTime:'18:00',itinerary:'confirmation',catechesisId:'adults',catechistIds:['u-ana']}});
+  assert.equal(created.status,201);
+  const g=(await req('/api/groups',{auth})).value.find(g=>g.id===created.value.id);
+  assert.equal((await req('/api/calendar',{method:'POST',auth,data:calendarSession({groupId:g.id})})).status,201);
+  assert.equal((await req(`/api/groups/${g.id}`,{method:'DELETE',auth,data:{version:g.version,confirmation:g.name}})).status,409);
+  assert.equal(app.store.get('SELECT COUNT(*) n FROM calendar_events WHERE group_id=?',g.id).n,1);
 });

@@ -20,7 +20,10 @@ test('Migración de grupos anteriores: conserva datos y no duplica catequesis al
   assert.equal(s.get('SELECT * FROM groups').version,7);
   s.run("INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary,catechesis_id) VALUES ('new','Nuevo','San Francisco','Lunes','18:00','19:00','first-communion','san-francisco')");
   assert.throws(()=>s.run("UPDATE groups SET catechesis_id='missing' WHERE id='existing'"));
+  assert.equal(s.get("SELECT sort_position FROM groups WHERE id='existing'").sort_position,null);
+  s.run("UPDATE groups SET sort_position=3 WHERE id='existing'");
   s.db.close();s=openStore(path,false);
+  assert.equal(s.get("SELECT sort_position FROM groups WHERE id='existing'").sort_position,3);
   assert.equal(s.get('SELECT COUNT(*) n FROM catecheses').n,2);
   assert.equal(s.get("SELECT catechesis_id FROM groups WHERE id='new'").catechesis_id,'san-francisco');
   assert.equal(s.get("SELECT name FROM groups WHERE id='existing'").name,'Grupo actual');
