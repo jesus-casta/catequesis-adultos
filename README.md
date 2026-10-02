@@ -92,3 +92,9 @@ El calendario también permite **Celebraciones**. En **Programar actividad**, se
 En **Ficha → Sacramentos**, el campo opcional **Parroquia de bautismo** permite registrar dónde fue bautizado el niño. Se guarda con los datos sacramentales, separado de la parroquia de su comunidad, y aparece también en la consulta de la ficha. Las fichas existentes lo muestran sin indicar hasta que se complete.
 
 Administración puede usar **Borrar ficha** para eliminar una persona junto con sus tutores, fotos y documentos, o **Borrar grupo** para eliminar un grupo vacío. Ambas operaciones exigen escribir el nombre para confirmar y rechazan una versión desactualizada. Los grupos con personas deben vaciarse mediante cambios de grupo o borrados individuales; borrar un grupo nunca elimina sus integrantes. Los borrados quedan registrados en auditoría y no se pueden deshacer desde la interfaz.
+
+### Exportar Excel por grupos
+
+En **Excel → Descargar Excel**, la única hoja es **Listado por grupos**, ordenada por curso/grupo y por nombre dentro de cada grupo. Incluye Grupo, Nombre, Apellidos, Nombre de la madre, Teléfono de la madre, Correo de la madre, Nombre del padre, Teléfono del padre, Correo del padre, Fecha de nacimiento, Colegio y Dirección. Los datos ausentes quedan en blanco. Los contactos se toman de los tutores con parentesco Madre o Padre y, cuando faltan, de los campos familiares anteriores. Colegio se completa en los datos de la ficha.
+
+El archivo contiene únicamente esas columnas, sin hojas adicionales. El listado es de consulta; la importación sigue disponible para archivos del formato anterior con hojas **Personas** y **Tutores**.
