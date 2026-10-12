@@ -138,7 +138,7 @@ export function openStore(path, demo, bootstrap) {
     ensureStaffed() {
       const row = this.get(`SELECT g.id FROM groups g WHERE EXISTS(SELECT 1 FROM people p WHERE p.group_id=g.id)
         AND NOT EXISTS(SELECT 1 FROM scopes s JOIN users u ON u.id=s.user_id WHERE s.group_id=g.id AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1)`);
-      if (row) fail(409, 'Una comunidad con personas no puede quedar sin catequista activo. Asigna un sustituto primero.');
+      if (row) fail(409, 'Un grupo con personas no puede quedar sin catequista activo. Asigna un sustituto primero.');
     }
   };
   if (!store.get('SELECT 1 FROM metadata WHERE key = ?', 'schema')) {

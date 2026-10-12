@@ -33,7 +33,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     return { user, session };
   }
   function admin(user) { if (user.role !== 'admin') fail(403, 'Esta operación corresponde a administración.'); }
-  function manage(user, catechesisId) { if(!s.canManage(user,catechesisId)) fail(403,'No administras este megagrupo.'); }
+  function manage(user, catechesisId) { if(!s.canManage(user,catechesisId)) fail(403,'No administras esta comunidad.'); }
   function bodyLimit(path) { return /\/(documents|photo)$/.test(path) ? 7 * 1024 * 1024 + 65536 : /\/import$/.test(path) ? 2 * 1024 * 1024 : 65536; }
   async function body(req, path) {
     if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) fail(415, 'Se requiere contenido JSON.');
@@ -44,7 +44,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     try { const value = JSON.parse(Buffer.concat(chunks).toString('utf8')); keys(value,Object.keys(value)); return value; }
     catch (error) { if (error instanceof AppError) throw error; fail(400, 'La solicitud no contiene datos válidos.'); }
   }
-  function group(id) { const g = s.get('SELECT * FROM groups WHERE id=?',id); if (!g) fail(400,'Selecciona una comunidad existente.'); return g; }
+  function group(id) { const g = s.get('SELECT * FROM groups WHERE id=?',id); if (!g) fail(400,'Selecciona un grupo existente.'); return g; }
   function groupData(b, old) {
     const out = {
       name:text(b.name,'Nombre',{required:true}), parish:text(b.parish,'Parroquia',{required:true}),
@@ -55,7 +55,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     out.catechesisId=text(b.catechesisId??old?.catechesis_id??'adults','Catequesis',{required:true,max:80});
     const catechesis=s.get('SELECT * FROM catecheses WHERE id=?',out.catechesisId);
     if(!catechesis)fail(400,'Selecciona una catequesis existente.');
-    if(old&&old.catechesis_id!==out.catechesisId)fail(400,'No se puede cambiar la catequesis de una comunidad existente.');
+    if(old&&old.catechesis_id!==out.catechesisId)fail(400,'No se puede cambiar la catequesis de un grupo existente.');
     if(catechesis.kind!=='general'&&(catechesis.kind==='first-communion')!==(out.itinerary==='first-communion'))fail(400,'El itinerario no corresponde a esta catequesis.');
     for (const id of out.catechistIds) { const u=s.user(id); if (!u?.active || !(u.role==='catechist'||(u.role==='admin'&&u.is_catechist))) fail(400,'Solo pueden asignarse catequistas activos.'); }
     return out;
@@ -74,7 +74,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     for(const id of managedCatechesisIds)if(!s.get('SELECT 1 FROM catecheses WHERE id=?',id))fail(400,'Selecciona una catequesis existente.');
     const requestedGroups=ids(b.groupIds);
     const groupIds=role==='reader'?[]:requestedGroups; groupIds.forEach(group);
-    if (role==='admin' && !isCatechist && groupIds.length) fail(400,'Administración tiene acceso a todas las comunidades y no necesita asignaciones.');
+    if (role==='admin' && !isCatechist && groupIds.length) fail(400,'Administración tiene acceso a todos los grupos y no necesita asignaciones.');
     const name=text(b.name,'Nombre',{required:true});
     const password=text(b.password ?? '', 'Contraseña',{max:128});
     if (password && password.length<12) fail(400,'La contraseña debe tener al menos 12 caracteres.');
@@ -158,12 +158,12 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           if(eventMatch&&untilDate!==undefined)fail(400,'Edita cada sesión por separado.');
           const d=calendarData({...data,kind:data.kind??old?.kind??'session'});
           manage(user,group(d.groupId).catechesis_id);
-          if(old&&old.group_id!==d.groupId)fail(400,'No se puede cambiar la comunidad de una sesión existente.');
+          if(old&&old.group_id!==d.groupId)fail(400,'No se puede cambiar el grupo de una sesión existente.');
           const dates=untilDate===undefined?[d.date]:weeklyDates(d.date,untilDate);
           const saved=[];
           s.transaction(()=>{
             for(const date of dates) {
-              if(d.status==='scheduled'&&s.get("SELECT 1 FROM calendar_events WHERE group_id=? AND date=? AND status='scheduled' AND start_time<? AND end_time>? AND id<>?",d.groupId,date,d.endTime,d.startTime,old?.id??''))fail(409,'Esta comunidad ya tiene una sesión o celebración en ese horario. Revisa el calendario; no se ha guardado ningún cambio.');
+              if(d.status==='scheduled'&&s.get("SELECT 1 FROM calendar_events WHERE group_id=? AND date=? AND status='scheduled' AND start_time<? AND end_time>? AND id<>?",d.groupId,date,d.endTime,d.startTime,old?.id??''))fail(409,'Este grupo ya tiene una sesión o celebración en ese horario. Revisa el calendario; no se ha guardado ningún cambio.');
               const id=old?.id??randomUUID();
               if(old)s.run('UPDATE calendar_events SET date=?,start_time=?,end_time=?,topic=?,notes=?,status=?,kind=?,version=version+1 WHERE id=?',date,d.startTime,d.endTime,d.topic,d.notes,d.status,d.kind,id);
               else s.run('INSERT INTO calendar_events (id,group_id,date,start_time,end_time,topic,notes,status,created_by,kind) VALUES (?,?,?,?,?,?,?,?,?,?)',id,d.groupId,date,d.startTime,d.endTime,d.topic,d.notes,d.status,user.id,d.kind);
@@ -176,16 +176,16 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         const catechesisMatch=path.match(/^\/api\/catecheses\/([^/]+)$/);
         if((path==='/api/catecheses'&&method==='POST')||(catechesisMatch&&method==='PUT')) {
           if(catechesisMatch)manage(user,catechesisMatch[1]);else admin(user);keys(b,['name','parish','kind','version']);
-          const name=text(b.name,'Nombre del megagrupo',{required:true,max:160});
+          const name=text(b.name,'Nombre de la comunidad',{required:true,max:160});
           const parish=text(b.parish??'','Parroquia',{max:160});
           const kind=choice(b.kind,['adults','first-communion','general'],'Tipo de catequesis');
           const id=catechesisMatch?.[1]??randomUUID();
           s.transaction(()=>{
             if(catechesisMatch) {
               const old=s.get('SELECT * FROM catecheses WHERE id=?',id);
-              if(!old)fail(404,'Megagrupo no encontrado.');
+              if(!old)fail(404,'Comunidad no encontrada.');
               version(b.version,old);
-              if(kind!=='general'&&s.all('SELECT itinerary FROM groups WHERE catechesis_id=?',id).some(g=>(kind==='first-communion')!==(g.itinerary==='first-communion')))fail(409,'El tipo elegido no admite los itinerarios de las comunidades existentes.');
+              if(kind!=='general'&&s.all('SELECT itinerary FROM groups WHERE catechesis_id=?',id).some(g=>(kind==='first-communion')!==(g.itinerary==='first-communion')))fail(409,'El tipo elegido no admite los itinerarios de los grupos existentes.');
               s.run('UPDATE catecheses SET name=?,parish=?,kind=?,version=version+1 WHERE id=?',name,parish,kind,id);
             } else s.run('INSERT INTO catecheses (id,name,parish,kind) VALUES (?,?,?,?)',id,name,parish,kind);
             s.audit(user.id,'catechesis.save',id);
@@ -202,7 +202,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           keys(b,['people','commit']);
           if(!Array.isArray(b.people)||b.people.length>1000||typeof b.commit!=='boolean')fail(400,'El contenido del Excel no es válido.');
           const catechesis=s.get('SELECT * FROM catecheses WHERE id=?',catechesisImport[1]);
-          if(!catechesis)fail(404,'Megagrupo no disponible.');
+          if(!catechesis)fail(404,'Comunidad no disponible.');
           const allowedGroups=s.all('SELECT * FROM groups WHERE catechesis_id=?',catechesis.id).filter(g=>user.role==='admin'||s.canRead(user,g.id));
           const allowedIds=new Set(allowedGroups.map(g=>g.id)),references=new Set(),incomingIds=new Set(),names=new Set();
           const prepared=b.people.map((item,index)=>{
@@ -213,10 +213,10 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             if(id&&incomingIds.has(id))fail(400,`Fila ${row}: el ID de ficha está repetido.`);if(id)incomingIds.add(id);
             const firstName=text(item.firstName,`Fila ${row}: nombre`,{required:true,max:100}),lastName=text(item.lastName,`Fila ${row}: apellidos`,{required:true,max:160});
             const groupId=text(item.groupId,`Fila ${row}: grupo`,{required:true,max:80});
-            if(!allowedIds.has(groupId))fail(403,`Fila ${row}: el grupo no pertenece a tu ámbito dentro de este megagrupo.`);
+            if(!allowedIds.has(groupId))fail(403,`Fila ${row}: el grupo no pertenece a tu ámbito dentro de esta comunidad.`);
             const old=id?s.get('SELECT * FROM people WHERE id=?',id):null;
             if(id&&!old)fail(400,`Fila ${row}: el ID de ficha no existe. Déjalo vacío para crear una ficha nueva.`);
-            if(old&&!allowedIds.has(old.group_id))fail(403,`Fila ${row}: la ficha no pertenece a este megagrupo o a tu ámbito.`);
+            if(old&&!allowedIds.has(old.group_id))fail(403,`Fila ${row}: la ficha no pertenece a esta comunidad o a tu ámbito.`);
             if(old&&old.group_id!==groupId&&user.role!=='admin')fail(403,`Fila ${row}: solo administración puede trasladar fichas entre grupos.`);
             const nameKey=`${firstName.toLocaleLowerCase('es')}\n${lastName.toLocaleLowerCase('es')}`;
             if(names.has(nameKey))fail(409,`Fila ${row}: hay otra fila con el mismo nombre y apellidos.`);names.add(nameKey);
@@ -266,7 +266,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             const g=s.get('SELECT * FROM groups WHERE id=?',groupMatch[1]);if(!g)fail(404,'Grupo no disponible.');version(b.version,g);
             if(b.confirmation!==g.name)fail(400,'Escribe el nombre del grupo para confirmar el borrado.');
             if(s.get('SELECT 1 FROM people WHERE group_id=?',g.id))fail(409,'El grupo todavía tiene personas. Cámbialas de grupo o borra sus fichas antes de eliminarlo.');
-            if(s.get('SELECT 1 FROM calendar_events WHERE group_id=?',g.id))fail(409,'La comunidad tiene actividades en el calendario y no se puede borrar.');
+            if(s.get('SELECT 1 FROM calendar_events WHERE group_id=?',g.id))fail(409,'El grupo tiene actividades en el calendario y no se puede borrar.');
             s.run('UPDATE users SET version=version+1 WHERE id IN (SELECT user_id FROM scopes WHERE group_id=?)',g.id);
             s.run('DELETE FROM scopes WHERE group_id=?',g.id);
             s.run('DELETE FROM groups WHERE id=?',g.id);
@@ -282,7 +282,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             const previous=s.all("SELECT sc.user_id FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1))",id).map(r=>r.user_id);
             if (groupMatch) {
               const old=group(id); version(b.version,old);
-              if (old.itinerary!==g.itinerary && s.get('SELECT 1 FROM people WHERE group_id=?',id)) fail(409,'El cambio de itinerario de una comunidad con personas está pendiente de definir.');
+              if (old.itinerary!==g.itinerary && s.get('SELECT 1 FROM people WHERE group_id=?',id)) fail(409,'El cambio de itinerario de un grupo con personas está pendiente de definir.');
               s.run('UPDATE groups SET name=?,parish=?,day=?,start_time=?,end_time=?,itinerary=?,version=version+1 WHERE id=?',g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,id);
               s.run("DELETE FROM scopes WHERE group_id=? AND user_id IN (SELECT id FROM users WHERE role='catechist' OR (role='admin' AND is_catechist=1))",id);
             } else s.run('INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary,catechesis_id) VALUES (?,?,?,?,?,?,?,?)',id,g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,g.catechesisId);

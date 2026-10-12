@@ -27,7 +27,7 @@ export function choice(value, allowed, label) {
   return value;
 }
 export function ids(value) {
-  if (!Array.isArray(value) || value.length > 100 || value.some(v => typeof v !== 'string')) fail(400, 'La asignación de comunidades o catequistas no es válida.');
+  if (!Array.isArray(value) || value.length > 100 || value.some(v => typeof v !== 'string')) fail(400, 'La asignación de grupos o catequistas no es válida.');
   return [...new Set(value)];
 }
 export function version(value, record) {

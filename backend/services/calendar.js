@@ -8,7 +8,7 @@ export function calendarData(body) {
   const startTime=text(body.startTime,'Hora de inicio',{required:true,max:5});
   const endTime=text(body.endTime,'Hora de finalización',{required:true,max:5});
   if(![startTime,endTime].every(t=>/^([01]\d|2[0-3]):[0-5]\d$/.test(t))||endTime<=startTime)fail(400,'La hora final debe ser posterior a la inicial, en el mismo día.');
-  return {kind:choice(body.kind??'session',['session','celebration'],'Tipo'),groupId:text(body.groupId,'Comunidad',{required:true,max:80}),date,startTime,endTime,
+  return {kind:choice(body.kind??'session',['session','celebration'],'Tipo'),groupId:text(body.groupId,'Grupo',{required:true,max:80}),date,startTime,endTime,
     topic:text(body.topic,'Tema',{required:true,max:240}),notes:text(body.notes??'','Notas',{max:4000}),
     status:choice(body.status??'scheduled',['scheduled','cancelled'],'Estado')};
 }

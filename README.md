@@ -98,3 +98,9 @@ Administración puede usar **Borrar ficha** para eliminar una persona junto con 
 En **Excel → Descargar Excel**, la única hoja es **Listado por grupos**, ordenada por curso/grupo y por nombre dentro de cada grupo. Incluye Grupo, Nombre, Apellidos, Nombre de la madre, Teléfono de la madre, Correo de la madre, Nombre del padre, Teléfono del padre, Correo del padre, Fecha de nacimiento, Colegio y Dirección. Los datos ausentes quedan en blanco. Los contactos se toman de los tutores con parentesco Madre o Padre y, cuando faltan, de los campos familiares anteriores. Colegio se completa en los datos de la ficha.
 
 El archivo contiene únicamente esas columnas, sin hojas adicionales. El listado es de consulta; la importación sigue disponible para archivos del formato anterior con hojas **Personas** y **Tutores**.
+
+## Comunidades, grupos y contacto de la madre
+
+La jerarquía es **Comunidad → Grupos → Personas**. «Comunidad» es el nivel antes llamado megagrupo (por ejemplo, Catequesis de adultos o Primera Comunión de una parroquia). Cada comunidad contiene sus grupos. Los permisos y los datos existentes se conservan.
+
+Los listados de Primera Comunión —Personas, listado desplegable de grupos y detalle del grupo— muestran también el nombre y teléfono de la madre. Se editan en la pestaña Datos de la ficha infantil. Si existe una tutora con parentesco «Madre» o «Mamá», se utiliza y actualiza ese contacto; en caso contrario se conservan los campos familiares anteriores. Si hay varias madres se muestra la marcada como principal, o la primera. Los datos que faltan aparecen como «Sin indicar».
