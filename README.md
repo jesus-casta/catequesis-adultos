@@ -19,14 +19,17 @@ npm run check
 
 `npm run dev` sirve la interfaz de desarrollo y conecta con el backend del puerto 3000. Para una instalación de ejemplo aislada, usar `npm run local`; nunca usar ese modo en AWS.
 
-## Perfiles
+## Organización y permisos
 
-- Visualizador: todas las comunidades, fichas, fotos y documentos, solo lectura. Es exclusivo.
-- Catequista: consulta y completa las fichas de sus comunidades; sube fotos y documentos.
-- Admin: gestión completa de usuarios, comunidades, asignaciones, fichas y archivos.
-- Catequista y Admin: una única cuenta y ficha, visible en ambos bloques de Usuarios. Las asignaciones indican qué comunidades acompaña; mantiene administración global.
+La jerarquía es **Comunidad → Grupos → Catecúmenos**. Las comunidades tienen nombre y tipo de catequesis, sin campo parroquia. Cada grupo incluye su parroquia, horario, itinerario y nombre del catequista; ese nombre no está vinculado a una cuenta.
 
-Personas se abren en ventanas con cierre y navegación anterior/siguiente. Las tarjetas de comunidad abren sus integrantes. La ficha de catequista incluye nombre, teléfono, correo y foto. Fotos JPG/PNG de hasta 2 MB; documentos PDF/JPG/PNG de hasta 5 MB.
+- Administrador: gestiona todos los grupos, comunidades, fichas y usuarios.
+- Encargado: gestiona únicamente los grupos asignados, sus fichas, documentos y calendario. Puede crear catecúmenos y trasladarlos entre sus grupos; no administra cuentas.
+- Visualizador: consulta las comunidades asignadas, incluidos sus grupos futuros, sin editar.
+
+La actualización desactiva una única vez las cuentas antiguas de catequistas y cierra sus sesiones, conservando sus nombres en los grupos. Los administradores y visualizadores conservan sus accesos. Administración crea los nuevos encargados y asigna sus grupos. Por compatibilidad con SQLite, el rol interno `catechist` representa al encargado; la API lo expone como `manager`.
+
+Las fichas se consultan y editan en una vista continua, sin pestañas. En niños aparecen madre, padre y un primer tutor vacío cuando no hay tutores. Los contactos existentes se conservan. Los adultos tienen parroquia en lugar de colegio. Fotos JPG/PNG de hasta 2 MB; documentos PDF/JPG/PNG de hasta 5 MB.
 
 ## Datos y operación
 
@@ -51,56 +54,22 @@ El estado actual está en [docs/ESTADO.md](docs/ESTADO.md). Funciones de evoluci
 
 La recuperación por correo está deshabilitada. El usuario debe contactar con el administrador general, que cambia la contraseña en **Usuarios → Editar → Nueva contraseña**. El cambio cierra las sesiones anteriores. También se conserva el comando `npm run db:reset-password -- USUARIO` para el operador del servidor.
 
-### Administradores de comunidad
+### Grupos y altas
 
-En **Usuarios → Editar**, selecciona **Administrador de comunidad** y marca los megagrupos en **Administrador de comunidad: megagrupos que podrá editar**. La cuenta se identifica como administrador de comunidad y puede editar esos megagrupos, crear y editar sus comunidades, asignar catequistas y gestionar sus personas y documentos. El permiso incluye las comunidades futuras y se retira inmediatamente al desmarcar el megagrupo. Las asignaciones adicionales como catequista conservan sus permisos habituales.
+El listado de grupos se despliega o repliega. Administración puede reordenar grupos. Administradores y encargados pueden trasladar catecúmenos entre los grupos que gestionan. Cada grupo tiene **Nuevo catecúmeno**, con el grupo preseleccionado; administración también dispone de **Nuevo encargado**, con ese grupo marcado.
 
-Solo el administrador general crea megagrupos y gestiona cuentas, contraseñas y permisos. Las bases existentes incorporan la tabla de permisos sin cambiar las asignaciones actuales.
+### Cambios masivos de curso
 
-### Catequesis y comunidades
+En Grupos o Personas, **Cambiar cursos en bloque** permite filtrar por grupo, seleccionar niños y asignar 1.º, 2.º, 3.º o dejar el curso sin indicar. Solo modifica el curso; conserva datos, archivos y grupo. La operación comprueba permisos y versiones y se guarda completa o no se guarda ninguna ficha.
 
-Después de iniciar sesión se elige entre **Catequesis de adultos** y **Primera Comunión — San Francisco de Asís**. Dentro de cada catequesis, administración puede crear las comunidades que necesite y asignar personas y catequistas. El menú «Catequesis» permite volver a elegir. Las listas y búsquedas de personas quedan limitadas a la catequesis seleccionada. Usuarios y permisos siguen siendo globales; las asignaciones identifican la catequesis de cada comunidad.
+### Calendario
 
-Las fichas de Primera Comunión tienen un formulario específico: nombre, apellidos, fecha de nacimiento, domicilio y localidad; curso (1.º, 2.º o 3.º) y tutores. La pestaña de documentación muestra y permite adjuntar certificados de bautismo del participante. Se conserva la tabla común de personas y cualquier información anterior almacenada; las fichas de adultos mantienen sus campos habituales.
+Administradores y encargados programan sesiones y celebraciones de sus grupos, individuales o semanales. Los visualizadores consultan las de sus comunidades. No se permiten solapamientos en un mismo grupo.
 
-Al actualizar, todas las comunidades existentes se incorporan automáticamente a adultos, conservando sus identificadores, personas, documentos y permisos. San Francisco comienza sin comunidades. La base de demostración conserva sus tres comunidades de ejemplo; en producción se conservan exactamente las comunidades existentes. No hay que reinicializar la base. Haz una copia de seguridad antes de desplegar y reconstruye el servicio `adultos` de Docker.
+### Excel
 
-Los catequistas solo ven las catequesis que contienen comunidades asignadas a ellos; no obtienen acceso al resto de comunidades de esa catequesis. Administración mantiene su acceso global. Los visualizadores consultan únicamente las catequesis asignadas. La creación y edición de comunidades corresponde a administración. Las comunidades nuevas de San Francisco usan el itinerario Primera Comunión; sus nombres permiten indicar curso, turno o nivel. No se trasladan comunidades completas entre catequesis desde el formulario.
+La descarga contiene un listado por grupos con contactos de madre y padre, nacimiento, dirección y colegio para niños o parroquia para adultos. La importación admite el formato anterior con hojas Personas y Tutores.
 
-En **Usuarios → Editar → Visualizador**, marca uno o varios «Megagrupos que podrá consultar». La selección incluye las comunidades actuales y futuras de cada catequesis. Sin selección, el visualizador no puede consultar comunidades, fichas, documentos ni fotos de catequistas. Al retirar una catequesis, las siguientes peticiones al servidor pierden el acceso inmediatamente, incluso con una sesión abierta.
+### Despliegue
 
-La migración conserva una única vez el acceso de los visualizadores existentes a las catequesis actuales. Administración puede restringirlo después. Las cuentas nuevas no reciben permisos por defecto y reiniciar el servidor no restaura permisos retirados.
-
-Administración dispone de **Nuevo megagrupo** y **Editar megagrupo** en la pantalla inicial de catequesis. Permiten definir nombre, parroquia e itinerarios admitidos (todos, adultos o Primera Comunión). Los dos megagrupos iniciales también son editables. Cambiar nombre o parroquia conserva las fichas, comunidades y permisos existentes; la parroquia sirve como propuesta para comunidades nuevas. Se rechaza un cambio de tipo incompatible con las comunidades existentes. Los nuevos megagrupos deben asignarse explícitamente a los visualizadores desde Usuarios.
-
-### Ordenar catecúmenos
-
-En el listado, **Ordenar por** permite elegir **Nombre (A–Z)** o **Curso (nivel y letra)**. El curso se toma del nombre de la comunidad, por ejemplo `1.º A`, `1.º B`, `2.º A`. Si no indica nivel, se usa el del itinerario cuando se conoce; las comunidades sin nivel quedan al final. Dentro de cada comunidad se ordena por nombre y apellidos. La búsqueda, el filtro y las flechas de las fichas respetan el orden elegido.
-
-### Calendario por comunidades
-
-**Mi calendario** muestra un mes y la agenda con el tema, horario y notas de cada sesión. Se puede acceder desde el menú o desde **Comunidades → Ver calendario de esta comunidad**. En una catequesis concreta se muestran sus comunidades; desde la pantalla inicial se pueden consultar todas las comunidades accesibles.
-
-El administrador general y los administradores de comunidad pueden pulsar **Programar actividad**, elegir una comunidad, la primera fecha y **Repetir hasta** para crear sesiones cada siete días (máximo 53 por operación). El horario se propone desde la comunidad. También pueden crear una sesión individual. El tema inicial puede ser «Tema pendiente»; después se edita cada fecha por separado. Las notas son visibles para quienes tienen acceso a esa comunidad.
-
-Los catequistas consultan las sesiones de sus comunidades y los visualizadores las de sus megagrupos asignados. El servidor verifica el ámbito en cada petición. Los cambios de tema, fecha y horario requieren permiso de administración; los festivos se pueden marcar como **Cancelada** y siguen visibles. Los cambios en una fecha no afectan al resto de la serie. No se permiten sesiones programadas que se solapen en una misma comunidad; si una serie encuentra un conflicto, no guarda ninguna de sus fechas.
-
-La actualización crea automáticamente la tabla de calendario sin modificar los registros existentes. Los horarios representan la hora local de la comunidad; la recurrencia semanal conserva el día al cambiar el horario de verano.
-
-El calendario también permite **Celebraciones**. En **Programar actividad**, selecciona el tipo y escribe el nombre de la celebración, fecha, horario y notas. Se distinguen visualmente de las sesiones y pueden ser individuales o semanales. Solo el administrador general y los administradores de comunidad pueden crear, editar o cancelar actividades, siempre dentro de su ámbito; catequistas y visualizadores solo consultan.
-
-En **Ficha → Sacramentos**, el campo opcional **Parroquia de bautismo** permite registrar dónde fue bautizado el niño. Se guarda con los datos sacramentales, separado de la parroquia de su comunidad, y aparece también en la consulta de la ficha. Las fichas existentes lo muestran sin indicar hasta que se complete.
-
-Administración puede usar **Borrar ficha** para eliminar una persona junto con sus tutores, fotos y documentos, o **Borrar grupo** para eliminar un grupo vacío. Ambas operaciones exigen escribir el nombre para confirmar y rechazan una versión desactualizada. Los grupos con personas deben vaciarse mediante cambios de grupo o borrados individuales; borrar un grupo nunca elimina sus integrantes. Los borrados quedan registrados en auditoría y no se pueden deshacer desde la interfaz.
-
-### Exportar Excel por grupos
-
-En **Excel → Descargar Excel**, la única hoja es **Listado por grupos**, ordenada por curso/grupo y por nombre dentro de cada grupo. Incluye Grupo, Nombre, Apellidos, Nombre de la madre, Teléfono de la madre, Correo de la madre, Nombre del padre, Teléfono del padre, Correo del padre, Fecha de nacimiento, Colegio y Dirección. Los datos ausentes quedan en blanco. Los contactos se toman de los tutores con parentesco Madre o Padre y, cuando faltan, de los campos familiares anteriores. Colegio se completa en los datos de la ficha.
-
-El archivo contiene únicamente esas columnas, sin hojas adicionales. El listado es de consulta; la importación sigue disponible para archivos del formato anterior con hojas **Personas** y **Tutores**.
-
-## Comunidades, grupos y contacto de la madre
-
-La jerarquía es **Comunidad → Grupos → Personas**. «Comunidad» es el nivel antes llamado megagrupo (por ejemplo, Catequesis de adultos o Primera Comunión de una parroquia). Cada comunidad contiene sus grupos. Los permisos y los datos existentes se conservan.
-
-Los listados de Primera Comunión —Personas, listado desplegable de grupos y detalle del grupo— muestran también el nombre y teléfono de la madre. Se editan en la pestaña Datos de la ficha infantil. Si existe una tutora con parentesco «Madre» o «Mamá», se utiliza y actualiza ese contacto; en caso contrario se conservan los campos familiares anteriores. Si hay varias madres se muestra la marcada como principal, o la primera. Los datos que faltan aparecen como «Sin indicar».
+Antes de actualizar, crear una copia consistente de SQLite con `backend/scripts/backup.js`. La migración de accesos se ejecuta una sola vez; reiniciar no desactiva encargados creados después. Conservar la imagen anterior y la copia para poder restaurar ambas si fuera necesario.

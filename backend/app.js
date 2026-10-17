@@ -34,6 +34,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
   }
   function admin(user) { if (user.role !== 'admin') fail(403, 'Esta operación corresponde a administración.'); }
   function manage(user, catechesisId) { if(!s.canManage(user,catechesisId)) fail(403,'No administras esta comunidad.'); }
+  function editGroup(user,id) { group(id); if(!s.canEditGroup(user,id))fail(403,'No puedes gestionar este grupo.'); }
   function bodyLimit(path) { return /\/(documents|photo)$/.test(path) ? 7 * 1024 * 1024 + 65536 : /\/import$/.test(path) ? 2 * 1024 * 1024 : 65536; }
   async function body(req, path) {
     if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) fail(415, 'Se requiere contenido JSON.');
@@ -47,9 +48,9 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
   function group(id) { const g = s.get('SELECT * FROM groups WHERE id=?',id); if (!g) fail(400,'Selecciona un grupo existente.'); return g; }
   function groupData(b, old) {
     const out = {
-      name:text(b.name,'Nombre',{required:true}), parish:text(b.parish,'Parroquia',{required:true}),
+      name:text(b.name,'Nombre',{required:true}), parish:text(b.parish??old?.parish??'','Parroquia'),
       day:choice(b.day,DAYS,'Día'), startTime:text(b.startTime,'Hora de inicio'), endTime:text(b.endTime,'Hora de finalización'),
-      itinerary:choice(b.itinerary,ITINERARIES,'Itinerario'), catechistIds:ids(b.catechistIds)
+      itinerary:choice(b.itinerary,ITINERARIES,'Itinerario'), catechistName:text(b.catechistName??old?.catechist_name??'','Nombre del catequista',{max:500})
     };
     if (![out.startTime,out.endTime].every(v=>/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) || out.endTime <= out.startTime) fail(400,'Revisa el horario: la hora final debe ser posterior a la inicial.');
     out.catechesisId=text(b.catechesisId??old?.catechesis_id??'adults','Catequesis',{required:true,max:80});
@@ -57,24 +58,20 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
     if(!catechesis)fail(400,'Selecciona una catequesis existente.');
     if(old&&old.catechesis_id!==out.catechesisId)fail(400,'No se puede cambiar la catequesis de un grupo existente.');
     if(catechesis.kind!=='general'&&(catechesis.kind==='first-communion')!==(out.itinerary==='first-communion'))fail(400,'El itinerario no corresponde a esta catequesis.');
-    for (const id of out.catechistIds) { const u=s.user(id); if (!u?.active || !(u.role==='catechist'||(u.role==='admin'&&u.is_catechist))) fail(400,'Solo pueden asignarse catequistas activos.'); }
     return out;
   }
   function userData(b,old) {
     const username=text(b.username,'Usuario',{required:true,max:80}).toLowerCase();
     if (!/^[a-z0-9][a-z0-9._@-]{2,79}$/.test(username)) fail(400,'Usuario: usa al menos tres letras, números o . _ @ -');
-    const role=choice(b.role,ROLES,'Perfil');
+    const requestedRole=choice(b.role,ROLES,'Perfil');
+    const role=requestedRole==='manager'?'catechist':requestedRole;
     if (typeof b.active !== 'boolean') fail(400,'Estado de cuenta no válido.');
-    if(b.isCatechist!==undefined && typeof b.isCatechist!=='boolean')fail(400,'Option catequista no válida.');
-    if(role==='reader'&&b.isCatechist===true)fail(400,'Visualizador no se puede combinar con Catequista.');
-    const isCatechist=role==='catechist'||(role==='admin'&&(b.isCatechist??!!old?.is_catechist));
+    if(b.isCatechist===true || (b.managedCatechesisIds??[]).length)fail(400,'Asigna encargados a grupos; los catequistas se indican en el grupo.');
+    const isCatechist=false,managedCatechesisIds=[];
     const catechesisIds=role==='reader'?ids(b.catechesisIds??(old?.role==='reader'?s.publicUser(old).catechesisIds:[])):[];
-    for(const id of catechesisIds)if(!s.get('SELECT 1 FROM catecheses WHERE id=?',id))fail(400,'Selecciona una catequesis existente.');
-    const managedCatechesisIds=role==='catechist'?ids(b.managedCatechesisIds??(old?s.publicUser(old).managedCatechesisIds:[])):[];
-    for(const id of managedCatechesisIds)if(!s.get('SELECT 1 FROM catecheses WHERE id=?',id))fail(400,'Selecciona una catequesis existente.');
-    const requestedGroups=ids(b.groupIds);
-    const groupIds=role==='reader'?[]:requestedGroups; groupIds.forEach(group);
-    if (role==='admin' && !isCatechist && groupIds.length) fail(400,'Administración tiene acceso a todos los grupos y no necesita asignaciones.');
+    for(const id of catechesisIds)if(!s.get('SELECT 1 FROM catecheses WHERE id=?',id))fail(400,'Selecciona una comunidad existente.');
+    const requestedGroups=ids(b.groupIds??[]);
+    const groupIds=role==='catechist'?requestedGroups:[]; groupIds.forEach(group);
     const name=text(b.name,'Nombre',{required:true});
     const password=text(b.password ?? '', 'Contraseña',{max:128});
     if (password && password.length<12) fail(400,'La contraseña debe tener al menos 12 caracteres.');
@@ -144,20 +141,20 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           const month=url.searchParams.get('month');
           if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month??''))fail(400,'Selecciona un mes válido.');
           const events=s.all('SELECT * FROM calendar_events WHERE date>=? AND date<=? ORDER BY date,start_time,topic,id',`${month}-01`,`${month}-31`);
-          return json(res,200,events.filter(e=>s.canRead(user,e.group_id)).map(e=>presentEvent(e,s.canManage(user,group(e.group_id).catechesis_id))));
+          return json(res,200,events.filter(e=>s.canRead(user,e.group_id)).map(e=>presentEvent(e,s.canEditGroup(user,e.group_id))));
         }
         const eventMatch=path.match(/^\/api\/calendar\/([^/]+)$/);
         if((path==='/api/calendar'&&method==='POST')||(eventMatch&&method==='PUT')) {
           const old=eventMatch?s.get('SELECT * FROM calendar_events WHERE id=?',eventMatch[1]):null;
           if(eventMatch) {
             if(!old||!s.canRead(user,old.group_id))fail(404,'Sesión no disponible en tu ámbito.');
-            manage(user,group(old.group_id).catechesis_id);
+            editGroup(user,old.group_id);
             version(b.version,old);
           }
           const {untilDate,...data}=b;
           if(eventMatch&&untilDate!==undefined)fail(400,'Edita cada sesión por separado.');
           const d=calendarData({...data,kind:data.kind??old?.kind??'session'});
-          manage(user,group(d.groupId).catechesis_id);
+          editGroup(user,d.groupId);
           if(old&&old.group_id!==d.groupId)fail(400,'No se puede cambiar el grupo de una sesión existente.');
           const dates=untilDate===undefined?[d.date]:weeklyDates(d.date,untilDate);
           const saved=[];
@@ -177,7 +174,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         if((path==='/api/catecheses'&&method==='POST')||(catechesisMatch&&method==='PUT')) {
           if(catechesisMatch)manage(user,catechesisMatch[1]);else admin(user);keys(b,['name','parish','kind','version']);
           const name=text(b.name,'Nombre de la comunidad',{required:true,max:160});
-          const parish=text(b.parish??'','Parroquia',{max:160});
+          const parish='';
           const kind=choice(b.kind,['adults','first-communion','general'],'Tipo de catequesis');
           const id=catechesisMatch?.[1]??randomUUID();
           s.transaction(()=>{
@@ -217,7 +214,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             const old=id?s.get('SELECT * FROM people WHERE id=?',id):null;
             if(id&&!old)fail(400,`Fila ${row}: el ID de ficha no existe. Déjalo vacío para crear una ficha nueva.`);
             if(old&&!allowedIds.has(old.group_id))fail(403,`Fila ${row}: la ficha no pertenece a esta comunidad o a tu ámbito.`);
-            if(old&&old.group_id!==groupId&&user.role!=='admin')fail(403,`Fila ${row}: solo administración puede trasladar fichas entre grupos.`);
+
             const nameKey=`${firstName.toLocaleLowerCase('es')}\n${lastName.toLocaleLowerCase('es')}`;
             if(names.has(nameKey))fail(409,`Fila ${row}: hay otra fila con el mismo nombre y apellidos.`);names.add(nameKey);
             const duplicate=s.all('SELECT id,first_name,last_name FROM people').find(p=>p.id!==id&&p.first_name.toLocaleLowerCase('es')===firstName.toLocaleLowerCase('es')&&p.last_name.toLocaleLowerCase('es')===lastName.toLocaleLowerCase('es'));
@@ -240,9 +237,9 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         if (path==='/api/groups' && method==='GET') {
           const gs=s.all('SELECT * FROM groups ORDER BY sort_position IS NULL,sort_position,name,id').filter(g=>user.role==='admin'||s.canRead(user,g.id));
-          return json(res,200,gs.map(g=>({id:g.id,catechesisId:g.catechesis_id,name:g.name,parish:g.parish,day:g.day,startTime:g.start_time,endTime:g.end_time,itinerary:g.itinerary,version:g.version,
+          return json(res,200,gs.map(g=>({id:g.id,catechesisId:g.catechesis_id,name:g.name,parish:g.parish,day:g.day,startTime:g.start_time,endTime:g.end_time,itinerary:g.itinerary,version:g.version,catechistName:g.catechist_name,canEdit:s.canEditGroup(user,g.id),
             count:s.get('SELECT COUNT(*) AS n FROM people WHERE group_id=?',g.id).n,
-            catechists:s.all("SELECT u.id,u.name,u.phone,u.email,u.version,EXISTS(SELECT 1 FROM user_photos up WHERE up.user_id=u.id) AS hasPhoto FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1 ORDER BY u.name",g.id)})));
+            catechists:[]})));
         }
         if(path==='/api/groups/order'&&method==='PUT') {
           admin(user);keys(b,['catechesisId','groups']);
@@ -275,20 +272,16 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           return json(res,200,{ok:true});
         }
         if ((path==='/api/groups'&&method==='POST') || (groupMatch&&method==='PUT')) {
-          keys(b,['name','parish','day','startTime','endTime','itinerary','catechistIds','version','catechesisId']);
+          keys(b,['name','parish','day','startTime','endTime','itinerary','catechistName','version','catechesisId']);
           const g=groupData(b,groupMatch?group(groupMatch[1]):null), id=groupMatch?.[1] ?? randomUUID();
-          manage(user,g.catechesisId);
+          if(groupMatch)editGroup(user,id);else admin(user);
           s.transaction(()=>{
-            const previous=s.all("SELECT sc.user_id FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1))",id).map(r=>r.user_id);
             if (groupMatch) {
               const old=group(id); version(b.version,old);
-              if (old.itinerary!==g.itinerary && s.get('SELECT 1 FROM people WHERE group_id=?',id)) fail(409,'El cambio de itinerario de un grupo con personas está pendiente de definir.');
-              s.run('UPDATE groups SET name=?,parish=?,day=?,start_time=?,end_time=?,itinerary=?,version=version+1 WHERE id=?',g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,id);
-              s.run("DELETE FROM scopes WHERE group_id=? AND user_id IN (SELECT id FROM users WHERE role='catechist' OR (role='admin' AND is_catechist=1))",id);
-            } else s.run('INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary,catechesis_id) VALUES (?,?,?,?,?,?,?,?)',id,g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,g.catechesisId);
-            for (const u of g.catechistIds) s.run('INSERT OR IGNORE INTO scopes VALUES (?,?)',u,id);
-            for (const uid of new Set([...previous,...g.catechistIds])) s.run('UPDATE users SET version=version+1 WHERE id=?',uid);
-            s.ensureStaffed(); s.audit(user.id,'group.save',id);
+              if (old.itinerary!==g.itinerary && s.get('SELECT 1 FROM people WHERE group_id=?',id)) fail(409,'No se puede cambiar el itinerario de un grupo con personas.');
+              s.run('UPDATE groups SET name=?,parish=?,day=?,start_time=?,end_time=?,itinerary=?,catechist_name=?,version=version+1 WHERE id=?',g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,g.catechistName,id);
+            } else s.run('INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary,catechesis_id,catechist_name) VALUES (?,?,?,?,?,?,?,?,?)',id,g.name,g.parish,g.day,g.startTime,g.endTime,g.itinerary,g.catechesisId,g.catechistName);
+            s.audit(user.id,'group.save',id);
           });
           return json(res,groupMatch?200:201,{id});
         }
@@ -296,7 +289,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           if(user.role!=='admin'&&!s.publicUser(user).managedCatechesisIds.length)fail(403,'Sin permiso.');
           return json(res,200,s.all("SELECT * FROM users WHERE active=1 AND (role='catechist' OR (role='admin' AND is_catechist=1)) ORDER BY name").map(u=>({id:u.id,name:u.name,role:u.role,isCatechist:true,active:true})));
         }
-        if (path==='/api/users'&&method==='GET') { admin(user); return json(res,200,s.all('SELECT * FROM users ORDER BY name').map(u=>s.publicUser(u))); }
+        if (path==='/api/users'&&method==='GET') { admin(user); return json(res,200,s.all('SELECT * FROM users WHERE deleted_at IS NULL ORDER BY name').map(u=>s.publicUser(u))); }
         const userPhoto=path.match(/^\/api\/users\/([^/]+)\/photo$/);
         if(userPhoto && ['GET','POST'].includes(method)) {
           const target=s.user(userPhoto[1]);
@@ -317,8 +310,25 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           res.writeHead(200,{'Content-Type':photo.mime,'Content-Length':photo.bytes.length});return res.end(Buffer.from(photo.bytes));
         }
         const userMatch=path.match(/^\/api\/users\/([^/]+)$/);
+        if(userMatch&&method==='DELETE') {
+          admin(user);keys(b,['version','confirmation']);
+          s.transaction(()=>{
+            const target=s.user(userMatch[1]);
+            if(!target||target.deleted_at)fail(404,'Usuario no disponible.');
+            version(b.version,target);
+            if(b.confirmation!==target.username)fail(400,'Escribe el usuario de acceso para confirmar el borrado.');
+            if(target.role==='admin'&&target.active&&!s.get("SELECT 1 FROM users WHERE role='admin' AND active=1 AND deleted_at IS NULL AND id<>?",target.id))fail(409,'Debe mantenerse al menos una cuenta administradora activa.');
+            if(target.id===user.id)fail(409,'No puedes borrar la cuenta con la que has iniciado sesión.');
+            for(const table of ['sessions','password_resets','scopes','reader_catecheses','managed_catecheses','user_photos'])s.run(`DELETE FROM ${table} WHERE user_id=?`,target.id);
+            // Keep the record as the historical author of documents and calendar entries.
+            s.run('UPDATE users SET active=0,deleted_at=?,password_hash=?,version=version+1 WHERE id=?',new Date(now()).toISOString(),passwordHash(randomBytes(48).toString('hex')),target.id);
+            s.audit(user.id,'user.delete',target.id);
+          });
+          return json(res,200,{ok:true});
+        }
         if ((path==='/api/users'&&method==='POST')||(userMatch&&method==='PUT')) {
           admin(user); keys(b,['username','name','role','active','password','groupIds','version','phone','email','isCatechist','catechesisIds','managedCatechesisIds']);
+          if(userMatch&&(!s.user(userMatch[1])||s.user(userMatch[1]).deleted_at))fail(404,'Usuario no disponible.');
           const d=userData(b,userMatch?s.user(userMatch[1]):null), id=userMatch?.[1]??randomUUID();
           if (!userMatch&&!d.password) fail(400,'Introduce una contraseña inicial de al menos 12 caracteres.');
           const duplicate=s.get('SELECT id FROM users WHERE username=?',d.username);
@@ -328,7 +338,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
             if(userMatch) {
               const old=s.user(id); if(!old) fail(404,'Cuenta no encontrada.'); version(b.version,old);
               s.run('UPDATE users SET username=?,name=?,role=?,active=?,password_hash=?,version=version+1 WHERE id=?',d.username,d.name,d.role,Number(d.active),d.password?passwordHash(d.password):old.password_hash,id);
-              if(old.role!==d.role || !d.active || d.password) s.run('DELETE FROM sessions WHERE user_id=?',id);
+              if(old.role!==d.role || !d.active || d.password || JSON.stringify(s.publicUser(old).groupIds.slice().sort())!==JSON.stringify(d.groupIds.slice().sort()) || JSON.stringify(s.publicUser(old).catechesisIds.slice().sort())!==JSON.stringify(d.catechesisIds.slice().sort())) s.run('DELETE FROM sessions WHERE user_id=?',id);
               s.run('DELETE FROM scopes WHERE user_id=?',id);
             } else s.run('INSERT INTO users (id,username,name,role,active,password_hash) VALUES (?,?,?,?,?,?)',id,d.username,d.name,d.role,Number(d.active),passwordHash(d.password));
             s.run('UPDATE users SET is_catechist=? WHERE id=?',Number(d.isCatechist),id);
@@ -349,7 +359,7 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
           return json(res,200,ps.map(p=>s.presentPerson(p)));
         }
         if(path==='/api/people'&&method==='POST') {
-          keys(b,['firstName','lastName','groupId','data','allowDuplicate']);manage(user,group(b.groupId).catechesis_id);
+          keys(b,['firstName','lastName','groupId','data','allowDuplicate']);editGroup(user,b.groupId);
           const first=text(b.firstName,'Nombre',{required:true,max:100}),last=text(b.lastName,'Apellidos',{required:true,max:160});group(b.groupId);
           const duplicate=s.all('SELECT first_name,last_name,group_id FROM people').filter(p=>s.canRead(user,p.group_id)).some(p=>p.first_name.toLocaleLowerCase('es')===first.toLocaleLowerCase('es')&&p.last_name.toLocaleLowerCase('es')===last.toLocaleLowerCase('es'));
           if(duplicate&&b.allowDuplicate!==true) fail(409,'Existe una ficha con el mismo nombre y apellidos. Revisa el listado; solo confirma el duplicado si es otra persona.');
@@ -360,10 +370,28 @@ export function createApplication({ dbPath = resolve(ROOT, 'local-data/catequesi
         }
         const assignment=path.match(/^\/api\/people\/([^/]+)\/group$/);
         if(assignment&&method==='PUT') {
-          keys(b,['groupId','version']);manage(user,group(b.groupId).catechesis_id);
-          const p=s.get('SELECT * FROM people WHERE id=?',assignment[1]);if(!p)fail(404,'Ficha no encontrada.');manage(user,group(p.group_id).catechesis_id);version(b.version,p);
+          keys(b,['groupId','version']);editGroup(user,b.groupId);
+          const p=s.get('SELECT * FROM people WHERE id=?',assignment[1]);if(!p)fail(404,'Ficha no encontrada.');editGroup(user,p.group_id);version(b.version,p);
           s.transaction(()=>{s.run('UPDATE people SET group_id=?,version=version+1,updated_at=? WHERE id=?',b.groupId,new Date(now()).toISOString(),p.id);s.ensureStaffed();s.audit(user.id,'person.move-group',p.id);});
           return json(res,200,{ok:true});
+        }
+        if(path==='/api/people/course'&&method==='PUT') {
+          keys(b,['people','communionYear']);
+          const year=choice(b.communionYear,['','1','2','3'],'Curso de catequesis');
+          if(!Array.isArray(b.people)||!b.people.length||b.people.length>1000)fail(400,'Selecciona entre 1 y 1000 niños.');
+          const seen=new Set();
+          s.transaction(()=>{
+            for(const entry of b.people) {
+              keys(entry,['id','version']);text(entry.id,'Ficha',{required:true});
+              if(seen.has(entry.id))fail(400,'Hay fichas repetidas.');seen.add(entry.id);
+              const p=s.person(user,entry.id,true);version(entry.version,p);
+              if(group(p.group_id).itinerary!=='first-communion')fail(400,'Solo se puede cambiar el curso de niños de Primera Comunión.');
+              const data={...JSON.parse(p.data),communionYear:year};
+              s.run('UPDATE people SET data=?,version=version+1,updated_at=? WHERE id=?',JSON.stringify(data),new Date(now()).toISOString(),p.id);
+              s.audit(user.id,'person.course',p.id);
+            }
+          });
+          return json(res,200,{updated:seen.size});
         }
         const personMatch=path.match(/^\/api\/people\/([^/]+)$/);
         if(personMatch&&method==='GET') return json(res,200,s.presentPerson(s.person(user,personMatch[1])));

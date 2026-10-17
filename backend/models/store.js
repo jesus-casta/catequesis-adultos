@@ -92,6 +92,7 @@ export function openStore(path, demo, bootstrap) {
   for (const column of ['phone', 'email']) {
     if (!userColumns.has(column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
   }
+  if (!userColumns.has('deleted_at')) db.exec("ALTER TABLE users ADD COLUMN deleted_at TEXT");
   if (!userColumns.has('is_catechist')) db.exec('ALTER TABLE users ADD COLUMN is_catechist INTEGER NOT NULL DEFAULT 0');
   if(!db.prepare('PRAGMA table_info(catecheses)').all().some(c=>c.name==='version')) {
     db.exec('ALTER TABLE catecheses ADD COLUMN version INTEGER NOT NULL DEFAULT 1');
@@ -110,6 +111,10 @@ export function openStore(path, demo, bootstrap) {
     CREATE TRIGGER IF NOT EXISTS groups_catechesis_update BEFORE UPDATE OF catechesis_id ON groups
     WHEN NOT EXISTS(SELECT 1 FROM catecheses WHERE id=NEW.catechesis_id)
     BEGIN SELECT RAISE(ABORT,'Catequesis inexistente'); END;`);
+  if (!db.prepare('PRAGMA table_info(groups)').all().some(column=>column.name==='catechist_name')) {
+    db.exec("ALTER TABLE groups ADD COLUMN catechist_name TEXT NOT NULL DEFAULT ''");
+  }
+  const existingDatabase = !!db.prepare("SELECT 1 FROM metadata WHERE key='schema'").get();
   const store = {
     db,
     get(sql, ...params) { return db.prepare(sql).get(...params); },
@@ -122,9 +127,10 @@ export function openStore(path, demo, bootstrap) {
     },
     audit(actor, action, entity) { this.run('INSERT INTO audit VALUES (?, ?, ?, ?, ?)', randomUUID(), actor, action, entity, new Date().toISOString()); },
     user(id) { return this.get('SELECT * FROM users WHERE id = ?', id); },
-    publicUser(u) { return { id:u.id, username:u.username, name:u.name, phone:u.phone, email:u.email, hasPhoto:!!this.get('SELECT 1 FROM user_photos WHERE user_id=?',u.id), role:u.role, managedCatechesisIds:this.all('SELECT catechesis_id FROM managed_catecheses WHERE user_id=?',u.id).map(c=>c.catechesis_id), isCatechist:u.role==='catechist'||(u.role==='admin'&&!!u.is_catechist), active:!!u.active, version:u.version, catechesisIds:this.all('SELECT catechesis_id FROM reader_catecheses WHERE user_id=? ORDER BY catechesis_id',u.id).map(c=>c.catechesis_id), groupIds:this.all('SELECT group_id FROM scopes WHERE user_id = ?',u.id).map(g=>g.group_id) }; },
-    canManage(u, catechesisId) { return u.role==='admin' || (u.role==='catechist' && !!this.get('SELECT 1 FROM managed_catecheses WHERE user_id=? AND catechesis_id=?',u.id,catechesisId)); },
-    canRead(u, groupId) { return this.canManage(u,this.get('SELECT catechesis_id FROM groups WHERE id=?',groupId)?.catechesis_id??'') || (u.role === 'reader' && !!this.get('SELECT 1 FROM reader_catecheses rc JOIN groups g ON g.catechesis_id=rc.catechesis_id WHERE rc.user_id=? AND g.id=?',u.id,groupId)) || (u.role === 'catechist' && !!this.get('SELECT 1 FROM scopes WHERE user_id = ? AND group_id = ?',u.id,groupId)); },
+    publicUser(u) { return { id:u.id, username:u.username, name:u.name, phone:u.phone, email:u.email, hasPhoto:!!this.get('SELECT 1 FROM user_photos WHERE user_id=?',u.id), role:u.role==='catechist'?'manager':u.role, managedCatechesisIds:this.all('SELECT catechesis_id FROM managed_catecheses WHERE user_id=?',u.id).map(c=>c.catechesis_id), isCatechist:false, active:!!u.active, version:u.version, catechesisIds:this.all('SELECT catechesis_id FROM reader_catecheses WHERE user_id=? ORDER BY catechesis_id',u.id).map(c=>c.catechesis_id), groupIds:this.all('SELECT group_id FROM scopes WHERE user_id = ?',u.id).map(g=>g.group_id) }; },
+    canManage(u) { return u.role==='admin'; },
+    canEditGroup(u, groupId) { return u.role==='admin' || (u.role==='catechist' && !!this.get('SELECT 1 FROM scopes WHERE user_id=? AND group_id=?',u.id,groupId)); },
+    canRead(u, groupId) { return this.canEditGroup(u,groupId) || (u.role==='reader' && !!this.get('SELECT 1 FROM reader_catecheses rc JOIN groups g ON g.catechesis_id=rc.catechesis_id WHERE rc.user_id=? AND g.id=?',u.id,groupId)); },
     person(u, id, edit = false) {
       const p = this.get('SELECT * FROM people WHERE id = ?', id);
       if (!p || !this.canRead(u, p.group_id)) fail(404, 'Ficha no disponible en tu ámbito.');
@@ -135,11 +141,8 @@ export function openStore(path, demo, bootstrap) {
       const base = {id:p.id, firstName:p.first_name,lastName:p.last_name,groupId:p.group_id,version:p.version};
       return {...base,data:JSON.parse(p.data),photoId:p.photo_id,updatedAt:p.updated_at,documents:this.all('SELECT id, type, owner, owner_name AS ownerName, name, mime, size, created_at AS createdAt FROM files WHERE person_id = ? AND type <> ? ORDER BY created_at DESC',p.id,'photo')};
     },
-    ensureStaffed() {
-      const row = this.get(`SELECT g.id FROM groups g WHERE EXISTS(SELECT 1 FROM people p WHERE p.group_id=g.id)
-        AND NOT EXISTS(SELECT 1 FROM scopes s JOIN users u ON u.id=s.user_id WHERE s.group_id=g.id AND (u.role='catechist' OR (u.role='admin' AND u.is_catechist=1)) AND u.active=1)`);
-      if (row) fail(409, 'Un grupo con personas no puede quedar sin catequista activo. Asigna un sustituto primero.');
-    }
+    // Catechists are group information; a login is never required to register people.
+    ensureStaffed() {}
   };
   if (!store.get('SELECT 1 FROM metadata WHERE key = ?', 'schema')) {
     if (demo) seedDemo(store);
@@ -160,6 +163,21 @@ export function openStore(path, demo, bootstrap) {
       // Preserve current readers' existing global access once; new readers get no implicit access.
       store.run("INSERT OR IGNORE INTO reader_catecheses SELECT u.id,c.id FROM users u CROSS JOIN catecheses c WHERE u.role='reader'");
       store.run("INSERT INTO metadata VALUES ('reader-catecheses-v1','1')");
+    });
+  }
+  if (!store.get("SELECT 1 FROM metadata WHERE key='independent-catechists-v1'")) {
+    store.transaction(()=>{
+      for (const group of store.all('SELECT id FROM groups')) {
+        const names=store.all("SELECT u.name FROM scopes sc JOIN users u ON u.id=sc.user_id WHERE sc.group_id=? AND (u.role='catechist' OR u.is_catechist=1) ORDER BY u.name",group.id).map(u=>u.name);
+        store.run("UPDATE groups SET catechist_name=? WHERE id=? AND catechist_name=''",names.join(' · '),group.id);
+      }
+      if(existingDatabase) {
+        store.run("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE role='catechist')");
+        store.run("UPDATE users SET active=0,version=version+1 WHERE role='catechist'");
+      }
+      store.run('DELETE FROM managed_catecheses');
+      store.run('UPDATE users SET is_catechist=0');
+      store.run("INSERT INTO metadata VALUES ('independent-catechists-v1','1')");
     });
   }
   return store;

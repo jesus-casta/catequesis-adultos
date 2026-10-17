@@ -76,3 +76,20 @@ test('Celebraciones: las sesiones anteriores conservan datos y reciben tipo sesi
   assert.equal(s.get("SELECT topic FROM calendar_events WHERE id='old'").topic,'Tema anterior');
   s.db.close();
 });
+
+test('Migración: desactiva accesos antiguos, conserva catequistas y no desactiva encargados nuevos al reiniciar',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'managers-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const path=join(dir,'test.sqlite');let s=openStore(path,true);
+  s.run("DELETE FROM metadata WHERE key='independent-catechists-v1'");
+  s.run("UPDATE groups SET catechist_name=''");
+  s.run("INSERT INTO sessions VALUES ('old-session','u-ana','csrf',9999999999999)");
+  const before=s.get('SELECT count(*) n FROM people').n;s.db.close();
+  s=openStore(path,false);
+  assert.equal(s.user('u-ana').active,0);assert.equal(s.user('u-luis').active,0);
+  assert.equal(s.user('u-admin').active,1);assert.equal(s.user('u-reader').active,1);
+  assert.equal(s.get('SELECT count(*) n FROM sessions').n,0);
+  assert.match(s.get("SELECT catechist_name FROM groups WHERE id='g-conf'").catechist_name,/Ana/);
+  assert.equal(s.get('SELECT count(*) n FROM people').n,before);
+  s.run("UPDATE users SET active=1 WHERE id='u-ana'");s.db.close();
+  s=openStore(path,false);assert.equal(s.user('u-ana').active,1);assert.equal(s.publicUser(s.user('u-ana')).role,'manager');s.db.close();
+});

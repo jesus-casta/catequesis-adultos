@@ -7,12 +7,12 @@ const dateLabel = value => new Date(`${value}T12:00:00`).toLocaleDateString('es-
 const monthLabel = month => new Date(`${month}-01T12:00:00`).toLocaleDateString('es-ES',{month:'long',year:'numeric'});
 const weekdays=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 
-export default function Calendar({groups,catecheses,isAdmin,api,initialGroup='all'}) {
+export default function Calendar({groups,isAdmin,api,initialGroup='all'}) {
   const [month,setMonth]=useState(()=>localDate().slice(0,7));
   const [filter,setFilter]=useState(initialGroup),[day,setDay]=useState('');
   const [events,setEvents]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const [reload,setReload]=useState(0),[editor,setEditor]=useState(null),[message,setMessage]=useState('');
-  const editableGroups=groups.filter(g=>isAdmin||catecheses.find(c=>c.id===g.catechesisId)?.canManage);
+  const editableGroups=groups.filter(g=>isAdmin||g.canEdit);
   const groupMap=new Map(groups.map(g=>[g.id,g]));
   useEffect(()=>{
     let live=true;

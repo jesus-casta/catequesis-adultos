@@ -37,13 +37,14 @@ export async function exportCatechesisExcel(catechesis,groups,people) {
   const ExcelJS=await loadExcelJS();
   const workbook=new ExcelJS.Workbook();workbook.creator='Gestión de catequesis';workbook.created=new Date();
   const listing=workbook.addWorksheet('Listado por grupos');
-  listing.addRow(['Grupo','Nombre','Apellidos','Nombre de la madre','Teléfono de la madre','Correo de la madre','Nombre del padre','Teléfono del padre','Correo del padre','Fecha de nacimiento','Colegio','Dirección']);
+  const adults=catechesis.kind==='adults';
+  listing.addRow(['Grupo','Nombre','Apellidos','Nombre de la madre','Teléfono de la madre','Correo de la madre','Nombre del padre','Teléfono del padre','Correo del padre','Fecha de nacimiento',adults?'Parroquia':'Colegio','Dirección']);
   const orderedPeople=orderPeople(people,groups,'course');
   for(const person of orderedPeople) {
     const d=person.data??{},group=groups.find(item=>item.id===person.groupId);
     const contact=relationship=>(d.guardians??[]).find(guardian=>normalized(guardian.relationship)===relationship);
     const mother=contact('madre'),father=contact('padre');
-    const row=listing.addRow([group?.name??'',person.firstName??'',person.lastName??'',mother?.name||d.mother||'',mother?.phone||d.motherPhone||'',mother?.email||d.motherEmail||'',father?.name||d.father||'',father?.phone||d.fatherPhone||'',father?.email||d.fatherEmail||'',d.birthDate?new Date(`${d.birthDate}T12:00:00Z`):null,d.school??'',d.address??'']);
+    const row=listing.addRow([group?.name??'',person.firstName??'',person.lastName??'',mother?.name||d.mother||'',mother?.phone||d.motherPhone||'',mother?.email||d.motherEmail||'',father?.name||d.father||'',father?.phone||d.fatherPhone||'',father?.email||d.fatherEmail||'',d.birthDate?new Date(`${d.birthDate}T12:00:00Z`):null,adults?(d.parish||group?.parish||''):(d.school??''),d.address??'']);
     row.getCell(10).numFmt='dd/mm/yyyy';
   }
   styleSheet(listing,[28,22,28,30,22,34,30,22,34,22,30,44]);

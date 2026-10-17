@@ -29,7 +29,7 @@ async function fixture(t,opts={}) {
 function spec(name,fn){test(name,async t=>fn(await fixture(t),t));}
 const updatePerson=(p,data={})=>({firstName:p.firstName,lastName:p.lastName,data:{...p.data,...data},version:p.version});
 const updateUser=(u,extra={})=>({username:u.username,name:u.name,role:u.role,active:u.active,groupIds:u.groupIds,password:'',version:u.version,...extra});
-const updateGroup=(g,extra={})=>({name:g.name,parish:g.parish,day:g.day,startTime:g.startTime,endTime:g.endTime,itinerary:g.itinerary,catechistIds:g.catechists.map(u=>u.id),version:g.version,...extra});
+const updateGroup=(g,extra={})=>({name:g.name,parish:g.parish,day:g.day,startTime:g.startTime,endTime:g.endTime,itinerary:g.itinerary,catechistName:g.catechistName,version:g.version,...extra});
 
 spec('CU-01: sesión autenticada, cookie HttpOnly y salida revocada',async({req,login})=>{
   const denied=await req('/api/people');assert.equal(denied.status,401);
@@ -71,7 +71,7 @@ spec('Administración recibe fichas completas',async({req,login})=>{
 });
 spec('CU-02: altas de cuenta, sin grupo no hay fichas; duplicado rechazado',async({req,login})=>{
   const auth=await login('admin');
-  const data={username:'nueva',name:'Nueva prueba',role:'catechist',active:true,password:DEMO_PASSWORD,groupIds:[]};
+  const data={username:'nueva',name:'Nueva prueba',role:'manager',active:true,password:DEMO_PASSWORD,groupIds:[]};
   assert.equal((await req('/api/users',{method:'POST',auth,data})).status,201);
   const newcomer=await login('nueva');assert.deepEqual((await req('/api/people',{auth:newcomer})).value,[]);
   assert.equal((await req('/api/users',{method:'POST',auth,data})).status,409);
@@ -99,14 +99,14 @@ spec('CU-03: crear grupo, horario inválido, modificación e itinerario ocupado'
   assert.equal((await req('/api/groups/g-conf',{method:'PUT',auth,data:updateGroup(g,{itinerary:'baptism-1'})})).status,409);
   assert.equal((await req('/api/groups/g-conf',{method:'PUT',auth,data:updateGroup(g,{day:'Viernes'})})).status,200);
 });
-spec('CU-04: varios catequistas comparten acceso; retirar el último se rechaza',async({req,login})=>{
-  const a=await login('ana'),l=await login('luis'),auth=await login('admin');
-  for(const u of [a,l])assert.equal((await req('/api/people/p-1',{auth:u})).status,200);
-  const g=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
-  assert.equal((await req('/api/groups/g-conf',{method:'PUT',auth,data:updateGroup(g,{catechistIds:[]})})).status,409);
-  assert.equal((await req('/api/groups/g-conf',{method:'PUT',auth,data:updateGroup(g,{catechistIds:['u-reader']})})).status,400);
-  assert.equal((await req('/api/groups/g-conf',{method:'PUT',auth,data:updateGroup(g,{catechistIds:['u-luis']})})).status,200);
-  assert.equal((await req('/api/people/p-1',{auth:a})).status,404);
+spec('Catequista del grupo independiente de los accesos de encargados',async({req,login})=>{
+  const auth=await login('admin'),a=await login('ana');
+  let g=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
+  assert.equal((await req('/api/groups/g-conf',{method:'PUT',auth,data:updateGroup(g,{catechistName:'María sin cuenta'})})).status,200);
+  g=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
+  assert.equal(g.catechistName,'María sin cuenta');
+  assert.equal((await req('/api/people/p-1',{auth:a})).status,200);
+  assert.equal((await req('/api/groups/g-conf',{method:'PUT',auth,data:updateGroup(g,{catechistName:''})})).status,200);
 });
 spec('CU-05: traslado único y revocación de acceso a ficha y archivo',async({req,login})=>{
   const auth=await login('admin'),a=await login('ana'),l=await login('luis');
@@ -130,7 +130,7 @@ spec('CU-06: alta mínima incompleta, grupo obligatorio y duplicado explícito',
 });
 spec('Alta completa: conserva curso de comunión y contactos responsables',async({req,login})=>{
   const auth=await login('admin');
-  const group={name:'Comunión · 2.º',parish:'San Francisco de Asís',day:'Miércoles',startTime:'17:00',endTime:'18:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistIds:['u-luis']};
+  const group={name:'Comunión · 2.º',parish:'San Francisco de Asís',day:'Miércoles',startTime:'17:00',endTime:'18:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistName:'Catequista de prueba'};
   const createdGroup=await req('/api/groups',{method:'POST',auth,data:group});assert.equal(createdGroup.status,201);
   const data={communionYear:'2',guardians:[{name:'Padre Prueba',relationship:'Padre',phone:'600000001',email:'padre@example.test',primary:false},{name:'Madre Prueba',relationship:'Madre',phone:'600000002',email:'madre@example.test',primary:false},{name:'Abuela Prueba',relationship:'Abuela',phone:'600000003',email:'abuela@example.test',primary:true}]};
   const created=await req('/api/people',{method:'POST',auth,data:{firstName:'Infantil',lastName:'Prueba',groupId:createdGroup.value.id,data}});assert.equal(created.status,201,JSON.stringify(created.value));
@@ -210,18 +210,18 @@ spec('CU-11: consulta autorizada de PDF, lector no puede adjuntar',async({req,lo
 });
 spec('Transacción: asignación fallida no cambia ficha ni auditoría',async({req,login,app})=>{
   const auth=await login('admin'),before=app.store.get('SELECT COUNT(*) n FROM audit').n;
-  const data={name:'Vacío',parish:'Ejemplo',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'confirmation',catechistIds:[]};
+  const data={name:'Vacío',parish:'Ejemplo',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'confirmation',catechistName:'Catequista de prueba'};
   const g=await req('/api/groups',{method:'POST',auth,data});assert.equal(g.status,201);
   const p=(await req('/api/people',{auth})).value.find(p=>p.id==='p-1');
-  assert.equal((await req('/api/people/p-1/group',{method:'PUT',auth,data:{groupId:g.value.id,version:p.version}})).status,409);
+  assert.equal((await req('/api/people/p-1/group',{method:'PUT',auth,data:{groupId:g.value.id,version:0}})).status,409);
   assert.equal((await req('/api/people',{auth})).value.find(p=>p.id==='p-1').groupId,'g-conf');
   assert.equal(app.store.get('SELECT COUNT(*) n FROM audit').n,before+1);
 });
-spec('Las versiones detectan cambios cruzados de asignación',async({req,login})=>{
+spec('Editar el nombre del catequista no modifica las cuentas de encargados',async({req,login})=>{
   const auth=await login('admin');const u=(await req('/api/users',{auth})).value.find(u=>u.id==='u-ana');
   const g=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
   assert.equal((await req('/api/groups/g-conf',{method:'PUT',auth,data:updateGroup(g)})).status,200);
-  assert.equal((await req('/api/users/u-ana',{method:'PUT',auth,data:updateUser(u)})).status,409);
+  assert.equal((await req('/api/users/u-ana',{method:'PUT',auth,data:updateUser(u)})).status,200);
 });
 test('Persistencia: datos y bytes sobreviven al cierre y reapertura, sin resembrar',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'catequesis-test-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
@@ -250,9 +250,8 @@ spec('Contacto de catequistas: guardar, consultar por grupo y conservar campos o
   assert.equal((await req(`/api/users/${ana.id}`,{auth,method:'PUT',data:updateUser(ana)})).status,200);
   const catechist=await login('ana');
   const groups=(await req('/api/groups',{auth:catechist})).value;
-  const shown=groups.flatMap(g=>g.catechists).find(u=>u.id===ana.id);
-  assert.equal(shown.email,contact.email);assert.equal(shown.phone,contact.phone);
-  assert.equal(shown.password_hash,undefined);
+  assert(groups.every(g=>g.catechists.length===0));
+  assert(groups.some(g=>g.catechistName.includes('Ana')));
   assert.equal((await req('/api/users',{auth:catechist})).status,403);
   ana=(await req('/api/users',{auth})).value.find(u=>u.id===ana.id);
   assert.equal((await req(`/api/users/${ana.id}`,{auth,method:'PUT',data:updateUser(ana,{email:'incorrecto'})})).status,400);
@@ -289,14 +288,14 @@ spec('Administración sube foto de catecúmeno y recibe datos completos',async({
 spec('Visitante consulta también grupos nuevos y sus documentos sin poder modificarlos',async({req,login})=>{
   const auth=await login('admin'),visitor=await login('consulta'),catechist=await login('ana');
   const base=(await req('/api/groups',{auth})).value[0];
-  const created=await req('/api/groups',{auth,method:'POST',data:{...updateGroup(base),name:'Grupo nuevo',catechistIds:['u-ana']}});
+  const created=await req('/api/groups',{auth,method:'POST',data:{...updateGroup(base),name:'Grupo nuevo',catechistName:'Catequista de prueba'}});
   assert.equal(created.status,201);
   assert((await req('/api/groups',{auth:visitor})).value.some(g=>g.id===created.value.id));
   const person=await req('/api/people',{auth,method:'POST',data:{firstName:'Nueva',lastName:'Persona',groupId:created.value.id}});assert.equal(person.status,201);
   const path=`/api/people/${person.value.id}`;
   assert.equal((await req(path,{auth:visitor})).status,200);
   const upload={name:'documento.pdf',base64:PDF,type:'birth',owner:'participant',version:1};
-  const file=await req(`${path}/documents`,{auth:catechist,method:'POST',data:upload});assert.equal(file.status,201);
+  const file=await req(`${path}/documents`,{auth,method:'POST',data:upload});assert.equal(file.status,201);
   assert.equal((await req(`/api/files/${file.value.id}`,{auth:visitor})).status,200);
   assert.equal((await req(`${path}/documents`,{auth:visitor,method:'POST',data:upload})).status,403);
   assert.equal((await req(`${path}/photo`,{auth:visitor,method:'POST',data:{name:'foto.png',base64:PNG,version:2}})).status,403);
@@ -314,25 +313,11 @@ spec('Administración edita datos personales, sacramentales y familiares y adjun
   assert((await req('/api/people/p-6',{auth})).value.documents.some(d=>d.id===file.value.id));
 });
 
-spec('Administrador también catequista: ficha, foto, asignación y protección del último catequista',async({req,login})=>{
+spec('Administración no se combina con catequista y conserva acceso global',async({req,login})=>{
   const auth=await login('admin');
-  let adminUser=(await req('/api/users',{auth})).value.find(u=>u.username==='admin');
-  assert.equal((await req(`/api/users/${adminUser.id}`,{auth,method:'PUT',data:updateUser(adminUser,{isCatechist:true,groupIds:['g-conf']})})).status,200);
-  adminUser=(await req('/api/users',{auth})).value.find(u=>u.id===adminUser.id);
-  assert.equal(adminUser.role,'admin');assert.equal(adminUser.isCatechist,true);
-  let group=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
-  assert(group.catechists.some(u=>u.id===adminUser.id));
-  assert.equal((await req('/api/groups/g-conf',{auth,method:'PUT',data:updateGroup(group,{catechistIds:[adminUser.id]})})).status,200);
-  adminUser=(await req('/api/users',{auth})).value.find(u=>u.id===adminUser.id);
-  assert.equal((await req(`/api/users/${adminUser.id}/photo`,{auth,method:'POST',data:{name:'foto.png',base64:PNG,version:adminUser.version}})).status,201);
-  assert.equal((await req(`/api/users/${adminUser.id}/photo`,{auth})).status,200);
-  adminUser=(await req('/api/users',{auth})).value.find(u=>u.id===adminUser.id);
-  assert.equal((await req(`/api/users/${adminUser.id}`,{auth,method:'PUT',data:updateUser(adminUser,{isCatechist:false,groupIds:[]})})).status,409);
+  const u=(await req('/api/users',{auth})).value.find(u=>u.role==='admin');
+  assert.equal((await req(`/api/users/${u.id}`,{auth,method:'PUT',data:updateUser(u,{isCatechist:true})})).status,400);
   assert.equal((await req('/api/people/p-6',{auth})).status,200);
-  group=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
-  assert.equal((await req('/api/groups/g-conf',{auth,method:'PUT',data:updateGroup(group,{catechistIds:['u-ana']})})).status,200);
-  group=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
-  assert(!group.catechists.some(u=>u.id===adminUser.id));
 });
 
 spec('Visualizador es exclusivo: se rechaza combinarlo con catequista',async({req,login})=>{
@@ -352,33 +337,21 @@ spec('Contraseñas: recuperación pública deshabilitada y cambio manual por adm
   assert.equal((await req('/api/login',{method:'POST',data:{username:'ana',password:'Nueva-clave-segura-2026!'}})).status,200);
 });
 
-spec('Administradores de grupo: ámbito, edición, asignación y revocación inmediata',async({req,login})=>{
-  const admin=await login('admin');
-  const user=(await req('/api/users',{auth:admin})).value.find(u=>u.username==='ana');
-  assert.equal((await req(`/api/users/${user.id}`,{auth:admin,method:'PUT',data:updateUser(user,{managedCatechesisIds:['san-francisco']})})).status,200);
-  const manager=await login();
-  const cs=(await req('/api/catecheses',{auth:manager})).value;
-  const own=cs.find(c=>c.id==='san-francisco');assert.equal(own.canManage,true);
-  const save=(id,c)=>req(`/api/catecheses/${id}`,{auth:manager,method:'PUT',data:{name:'Nombre cambiado',parish:c.parish,kind:c.kind,version:c.version}});
-  assert.equal((await save(own.id,own)).status,200);
-  assert.equal((await save('adults',cs.find(c=>c.id==='adults'))).status,403);
-  assert.equal((await req('/api/catecheses',{auth:manager,method:'POST',data:{name:'No permitido',parish:'',kind:'general'}})).status,403);
-  assert.equal((await req('/api/users',{auth:manager})).status,403);
-  assert.equal((await req(`/api/users/${user.id}`,{auth:manager,method:'PUT',data:updateUser(user,{role:'admin'})})).status,403);
-  const group={name:'Nuevo grupo',parish:'Parroquia',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'first-communion',catechistIds:['u-luis'],catechesisId:own.id};
-  const created=await req('/api/groups',{auth:manager,method:'POST',data:group});assert.equal(created.status,201);
-  assert.equal((await req('/api/groups',{auth:manager,method:'POST',data:{...group,catechesisId:'adults',itinerary:'confirmation'}})).status,403);
-  const person=await req('/api/people',{auth:manager,method:'POST',data:{firstName:'Nueva',lastName:'Persona',groupId:created.value.id}});assert.equal(person.status,201);
-  const p=(await req(`/api/people/${person.value.id}`,{auth:manager})).value;
-  assert.equal((await req(`/api/people/${p.id}`,{auth:manager,method:'PUT',data:updatePerson(p,{email:'persona@example.org'})})).status,200);
-  const outside=(await req('/api/groups',{auth:admin})).value.find(g=>g.catechesisId==='adults');
+spec('Encargados: grupos concretos, altas, edición y revocación de permisos',async({req,login})=>{
+  const admin=await login('admin'),manager=await login('ana');
+  const gs=(await req('/api/groups',{auth:admin})).value;
+  const own=gs.find(g=>g.id==='g-conf'),outside=gs.find(g=>g.id==='g-second');
+  assert.equal(manager.user.role,'manager');
+  assert.equal((await req(`/api/groups/${own.id}`,{auth:manager,method:'PUT',data:updateGroup(own,{catechistName:'Sin cuenta'})})).status,200);
   assert.equal((await req(`/api/groups/${outside.id}`,{auth:manager,method:'PUT',data:updateGroup(outside)})).status,403);
-  assert.equal((await req(`/api/people/${p.id}/group`,{auth:manager,method:'PUT',data:{groupId:outside.id,version:p.version+1}})).status,403);
-  const current=(await req('/api/users',{auth:admin})).value.find(u=>u.id===user.id);
-  assert.equal((await req(`/api/users/${user.id}`,{auth:admin,method:'PUT',data:updateUser(current,{managedCatechesisIds:[]})})).status,200);
-  assert.equal((await save(own.id,{...own,version:own.version+1})).status,403);
-  assert.equal((await req(`/api/people/${p.id}`,{auth:manager})).status,404);
-  assert.equal((await req('/api/catechists',{auth:manager})).status,403);
+  assert.equal((await req('/api/groups',{auth:manager,method:'POST',data:updateGroup(own)})).status,403);
+  const person=await req('/api/people',{auth:manager,method:'POST',data:{firstName:'Nueva',lastName:'Persona',groupId:own.id}});assert.equal(person.status,201);
+  assert.equal((await req('/api/people',{auth:manager,method:'POST',data:{firstName:'Fuera',lastName:'Ámbito',groupId:outside.id}})).status,403);
+  assert.equal((await req('/api/users',{auth:manager})).status,403);
+  const u=(await req('/api/users',{auth:admin})).value.find(u=>u.username==='ana');
+  assert.equal((await req(`/api/users/${u.id}`,{auth:admin,method:'PUT',data:updateUser(u,{groupIds:[]})})).status,200);
+  assert.equal((await req(`/api/people/${person.value.id}`,{auth:manager})).status,401);
+  const again=await login('ana');assert.deepEqual((await req('/api/groups',{auth:again})).value,[]);
 });
 
 spec('Catequesis: existentes en adultos, San Francisco vacío y acceso por ámbito',async({req,login})=>{
@@ -394,7 +367,7 @@ spec('Catequesis: existentes en adultos, San Francisco vacío y acceso por ámbi
 
 spec('Catequesis: crear grupos de comunión sin ampliar permisos ni cambiar grupos anteriores',async({req,login})=>{
   const auth=await login('admin'),ana=await login('ana');
-  const data={name:'Primera Comunión · 1.º A',parish:'San Francisco de Asís',day:'Sábado',startTime:'10:00',endTime:'11:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistIds:['u-luis']};
+  const data={name:'Primera Comunión · 1.º A',parish:'San Francisco de Asís',day:'Sábado',startTime:'10:00',endTime:'11:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistName:'Catequista de prueba'};
   assert.equal((await req('/api/groups',{method:'POST',auth:ana,data})).status,403);
   assert.equal((await req('/api/groups',{method:'POST',auth,data:{...data,catechesisId:'missing'}})).status,400);
   assert.equal((await req('/api/groups',{method:'POST',auth,data:{...data,itinerary:'confirmation'}})).status,400);
@@ -404,8 +377,8 @@ spec('Catequesis: crear grupos de comunión sin ampliar permisos ni cambiar grup
   assert.equal((await req(`/api/people/${person.value.id}`,{auth:ana})).status,404);
   assert(!(await req('/api/groups',{auth:ana})).value.some(g=>g.id===id));
   const luis=await login('luis');
-  assert.equal((await req(`/api/people/${person.value.id}`,{auth:luis})).status,200);
-  assert.equal((await req('/api/catecheses',{auth:luis})).value.length,2);
+  assert.equal((await req(`/api/people/${person.value.id}`,{auth:luis})).status,404);
+  assert.equal((await req('/api/catecheses',{auth:luis})).value.length,1);
   const visitor=await login('consulta');assert.equal((await req('/api/catecheses',{auth:visitor})).value.length,2);
   const current=(await req('/api/groups',{auth})).value.find(g=>g.id===id);
   assert.equal((await req(`/api/groups/${id}`,{method:'PUT',auth,data:{...data,version:current.version,name:'Primera Comunión · 1.º B'}})).status,200);
@@ -413,9 +386,9 @@ spec('Catequesis: crear grupos de comunión sin ampliar permisos ni cambiar grup
   assert.equal((await req('/api/groups',{auth})).value.find(g=>g.id===id).catechesisId,'san-francisco');
 });
 
-spec('Visualizador: uno o varios megagrupos, archivos protegidos y retirada inmediata',async({req,login,app})=>{
+spec('Visualizador: uno o varios comunidades, archivos protegidos y retirada inmediata',async({req,login,app})=>{
   const auth=await login('admin');
-  const created=await req('/api/groups',{auth,method:'POST',data:{name:'Comunión A',parish:'San Francisco',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistIds:['u-luis']}});
+  const created=await req('/api/groups',{auth,method:'POST',data:{name:'Comunión A',parish:'San Francisco',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'first-communion',catechesisId:'san-francisco',catechistName:'Catequista de prueba'}});
   assert.equal(created.status,201);
   const person=await req('/api/people',{auth,method:'POST',data:{firstName:'Prueba',lastName:'Comunión',groupId:created.value.id}});
   const path=`/api/people/${person.value.id}`;
@@ -424,7 +397,7 @@ spec('Visualizador: uno o varios megagrupos, archivos protegidos y retirada inme
   assert.equal(doc.status,201);assert.equal(photo.status,201);
   const newReader=await req('/api/users',{auth,method:'POST',data:{username:'limited',name:'Consulta limitada',role:'reader',active:true,password:DEMO_PASSWORD,groupIds:[],catechesisIds:['adults']}});
   assert.equal(newReader.status,201);
-  const visitor=await login('limited');
+  let visitor=await login('limited');
   const change=async catechesisIds=>{
     const user=(await req('/api/users',{auth})).value.find(u=>u.id===newReader.value.id);
     return req(`/api/users/${user.id}`,{auth,method:'PUT',data:{...updateUser(user),catechesisIds}});
@@ -433,16 +406,17 @@ spec('Visualizador: uno o varios megagrupos, archivos protegidos y retirada inme
   assert.equal((await req(path,{auth:visitor})).status,404);
   assert.equal((await req(`/api/files/${doc.value.id}`,{auth:visitor})).status,404);
   assert.equal((await change(['adults','san-francisco'])).status,200);
+  assert.equal((await req('/api/session',{auth:visitor})).status,401);visitor=await login('limited');
   assert.equal((await req('/api/catecheses',{auth:visitor})).value.length,2);
   assert.equal((await req(path,{auth:visitor})).status,200);
   assert.equal((await req(`/api/files/${doc.value.id}`,{auth:visitor})).status,200);
   assert.equal((await req(`/api/files/${photo.value.id}`,{auth:visitor})).status,200);
   assert.equal((await req(`${path}/documents`,{auth:visitor,method:'POST',data:{}})).status,403);
   assert.equal((await change(['missing'])).status,400);
-  assert.equal((await change(['san-francisco'])).status,200);
+  assert.equal((await change(['san-francisco'])).status,200);visitor=await login('limited');
   assert.equal((await req('/api/people/p-1',{auth:visitor})).status,404);
   assert.deepEqual((await req('/api/groups',{auth:visitor})).value.map(g=>g.id),[created.value.id]);
-  assert.equal((await change([])).status,200);
+  assert.equal((await change([])).status,200);visitor=await login('limited');
   assert.deepEqual((await req('/api/people',{auth:visitor})).value,[]);
   assert.deepEqual((await req('/api/catecheses',{auth:visitor})).value,[]);
   assert.equal((await req(`/api/files/${doc.value.id}`,{auth:visitor})).status,404);
@@ -451,7 +425,7 @@ spec('Visualizador: uno o varios megagrupos, archivos protegidos y retirada inme
   assert.equal(app.store.publicUser(app.store.user(newReader.value.id)).catechesisIds.length,0);
 });
 
-spec('Megagrupos: administración crea y edita, sin conceder acceso implícito',async({req,login})=>{
+spec('Comunidades: administración crea y edita, sin conceder acceso implícito',async({req,login})=>{
   const auth=await login('admin'),reader=await login('consulta'),catechist=await login('ana');
   const data={name:'Catequesis de otra parroquia',parish:'Santa María',kind:'general'};
   for(const user of [reader,catechist])assert.equal((await req('/api/catecheses',{auth:user,method:'POST',data})).status,403);
@@ -463,7 +437,7 @@ spec('Megagrupos: administración crea y edita, sin conceder acceso implícito',
   assert.equal((await req(`/api/catecheses/${id}`,{auth,method:'PUT',data:{...data,name:'Santa María — Catequesis',version:original.version}})).status,200);
   assert.equal((await req(`/api/catecheses/${id}`,{auth,method:'PUT',data:{...data,version:original.version}})).status,409);
   assert.equal((await req(`/api/catecheses/${id}`,{auth:reader,method:'PUT',data:{...data,version:2}})).status,403);
-  const group={name:'Comunión',parish:'Santa María',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'first-communion',catechesisId:id,catechistIds:[]};
+  const group={name:'Comunión',parish:'Santa María',day:'Lunes',startTime:'18:00',endTime:'19:00',itinerary:'first-communion',catechesisId:id,catechistName:'Catequista de prueba'};
   assert.equal((await req('/api/groups',{auth,method:'POST',data:group})).status,201);
   assert.equal((await req('/api/groups',{auth,method:'POST',data:{...group,name:'Confirmación',itinerary:'confirmation'}})).status,201);
   assert.equal((await req(`/api/catecheses/${id}`,{auth,method:'PUT',data:{...data,kind:'adults',version:2}})).status,409);
@@ -492,15 +466,15 @@ spec('Calendario: lectura por ámbito, administradores de comunidad y retirada i
   const event=created.value.events[0];
   assert.equal((await req('/api/calendar?month=2026-10',{auth:ana})).value.length,0);
   assert.equal((await req(`/api/calendar/${event.id}`,{auth:ana,method:'PUT',data:editCalendar(event)})).status,404);
-  assert.equal((await req('/api/calendar',{auth:ana,method:'POST',data:calendarSession()})).status,403);
+  assert.equal((await req('/api/calendar',{auth:ana,method:'POST',data:calendarSession({groupId:'g-second',date:'2026-10-08'})})).status,403);
   assert.equal((await req('/api/calendar?month=2026-10',{auth:reader})).value[0].canEdit,false);
   assert.equal((await req(`/api/calendar/${event.id}`,{auth:reader,method:'PUT',data:editCalendar(event)})).status,403);
-  app.store.run("INSERT INTO managed_catecheses VALUES ('u-ana','adults')");
+  app.store.run("INSERT OR IGNORE INTO scopes VALUES ('u-ana','g-second')");
   assert.equal((await req('/api/calendar?month=2026-10',{auth:ana})).value[0].canEdit,true);
   assert.equal((await req(`/api/calendar/${event.id}`,{auth:ana,method:'PUT',data:editCalendar(event,{topic:'Nuevo tema'})})).status,200);
   app.store.run("INSERT INTO groups (id,name,parish,day,start_time,end_time,itinerary,catechesis_id) VALUES ('other','Otra','P','Lunes','18:00','19:00','first-communion','san-francisco')");
   assert.equal((await req('/api/calendar',{auth:ana,method:'POST',data:calendarSession({groupId:'other'})})).status,403);
-  app.store.run("DELETE FROM managed_catecheses WHERE user_id='u-ana'");
+  app.store.run("DELETE FROM scopes WHERE user_id='u-ana' AND group_id='g-second'");
   assert.equal((await req('/api/calendar?month=2026-10',{auth:ana})).value.length,0);
   app.store.run("DELETE FROM reader_catecheses WHERE user_id='u-reader'");
   assert.equal((await req('/api/calendar?month=2026-10',{auth:reader})).value.length,0);
@@ -522,11 +496,11 @@ spec('Celebraciones: visibles en su comunidad y solo administradores pueden camb
   const created=await req('/api/calendar',{auth:admin,method:'POST',data});
   assert.equal(created.status,201);const event=created.value.events[0];assert.equal(event.kind,'celebration');
   assert.equal((await req('/api/calendar?month=2026-10',{auth:ana})).value[0].kind,'celebration');
-  for(const auth of [ana,reader]) {
+  for(const auth of [reader]) {
     assert.equal((await req('/api/calendar',{auth,method:'POST',data:{...data,date:'2026-10-08'}})).status,403);
     assert.equal((await req(`/api/calendar/${event.id}`,{auth,method:'PUT',data:editCalendar(event,{kind:'celebration',status:'cancelled'})})).status,403);
   }
-  app.store.run("INSERT INTO managed_catecheses VALUES ('u-ana','adults')");
+  app.store.run("INSERT OR IGNORE INTO scopes VALUES ('u-ana','g-second')");
   const changed=await req(`/api/calendar/${event.id}`,{auth:ana,method:'PUT',data:editCalendar(event,{status:'cancelled'})});
   assert.equal(changed.status,200);assert.equal(changed.value.events[0].kind,'celebration');assert.equal(changed.value.events[0].status,'cancelled');
   assert.equal((await req('/api/calendar',{auth:admin,method:'POST',data:{...data,kind:'invalid'}})).status,400);
@@ -572,12 +546,13 @@ spec('Borrado de grupos: impide borrar con personas, limpia asignaciones y conse
   const occupied=(await req('/api/groups',{auth})).value.find(g=>g.id==='g-conf');
   assert.equal((await req('/api/groups/g-conf',{method:'DELETE',auth,data:{version:occupied.version,confirmation:occupied.name}})).status,409);
   assert.equal(app.store.get("SELECT count(*) n FROM people WHERE group_id='g-conf'").n,3);
-  const created=await req('/api/groups',{method:'POST',auth,data:{name:'Grupo para borrar',parish:'Ejemplo',day:'Lunes',startTime:'17:00',endTime:'18:00',itinerary:'confirmation',catechesisId:'adults',catechistIds:['u-ana']}});
+  const created=await req('/api/groups',{method:'POST',auth,data:{name:'Grupo para borrar',parish:'Ejemplo',day:'Lunes',startTime:'17:00',endTime:'18:00',itinerary:'confirmation',catechesisId:'adults',catechistName:'Catequista de prueba'}});
   assert.equal(created.status,201);
   const id=created.value.id,g=(await req('/api/groups',{auth})).value.find(g=>g.id===id),data={version:g.version,confirmation:g.name};
   for(const denied of [catechist,reader])assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth:denied,data})).status,403);
   assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data:{...data,confirmation:'otro'}})).status,400);
   assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data:{...data,version:0}})).status,409);
+  app.store.run('INSERT INTO scopes VALUES (?,?)','u-ana',id);
   const before=app.store.user('u-ana').version;
   assert.equal((await req(`/api/groups/${id}`,{method:'DELETE',auth,data})).status,200);
   assert.equal(app.store.get('SELECT id FROM groups WHERE id=?',id),undefined);
@@ -613,7 +588,7 @@ spec('Traslado por arrastre: solo administración, versión vigente y datos cons
   const auth=await login('admin'),catechist=await login('ana');
   const before=(await req('/api/people/p-4',{auth})).value;
   const data={groupId:'g-second',version:before.version};
-  assert.equal((await req('/api/people/p-4/group',{auth:catechist,method:'PUT',data})).status,403);
+  assert.equal((await req('/api/people/p-6/group',{auth:catechist,method:'PUT',data})).status,403);
   assert.equal((await req('/api/people/p-4/group',{auth,method:'PUT',data})).status,200);
   const after=(await req('/api/people/p-4',{auth})).value;
   assert.equal(after.groupId,'g-second');assert.deepEqual(after.data,before.data);assert.deepEqual(after.documents,before.documents);
@@ -624,10 +599,54 @@ spec('Traslado por arrastre: solo administración, versión vigente y datos cons
 
 spec('Borrado de comunidad: conserva las actividades del calendario',async({req,login,app})=>{
   const auth=await login('admin');
-  const created=await req('/api/groups',{method:'POST',auth,data:{name:'Comunidad con calendario',parish:'Ejemplo',day:'Lunes',startTime:'17:00',endTime:'18:00',itinerary:'confirmation',catechesisId:'adults',catechistIds:['u-ana']}});
+  const created=await req('/api/groups',{method:'POST',auth,data:{name:'Comunidad con calendario',parish:'Ejemplo',day:'Lunes',startTime:'17:00',endTime:'18:00',itinerary:'confirmation',catechesisId:'adults',catechistName:'Catequista de prueba'}});
   assert.equal(created.status,201);
   const g=(await req('/api/groups',{auth})).value.find(g=>g.id===created.value.id);
   assert.equal((await req('/api/calendar',{method:'POST',auth,data:calendarSession({groupId:g.id})})).status,201);
   assert.equal((await req(`/api/groups/${g.id}`,{method:'DELETE',auth,data:{version:g.version,confirmation:g.name}})).status,409);
   assert.equal(app.store.get('SELECT COUNT(*) n FROM calendar_events WHERE group_id=?',g.id).n,1);
+});
+
+spec('Cursos masivos: permisos, atomicidad, versiones y conservación de otros datos',async({req,login,app})=>{
+  const admin=await login('admin'),manager=await login('ana'),reader=await login('consulta');
+  app.store.run("UPDATE groups SET itinerary='first-communion',catechesis_id='san-francisco' WHERE id IN ('g-conf','g-second')");
+  const get=async id=>(await req(`/api/people/${id}`,{auth:admin})).value;
+  const one=await get('p-1'),two=await get('p-2'),outside=await get('p-6');
+  const payload=items=>({communionYear:'3',people:items.map(p=>({id:p.id,version:p.version}))});
+  assert.equal((await req('/api/people/course',{auth:reader,method:'PUT',data:payload([one])})).status,403);
+  assert.equal((await req('/api/people/course',{auth:manager,method:'PUT',data:payload([one,outside])})).status,404);
+  assert.equal((await get(one.id)).version,one.version);
+  assert.equal((await req('/api/people/course',{auth:manager,method:'PUT',data:payload([one,{...two,version:0}])})).status,409);
+  assert.equal((await get(one.id)).version,one.version);
+  assert.equal((await req('/api/people/course',{auth:manager,method:'PUT',data:payload([one,one])})).status,400);
+  assert.equal((await req('/api/people/course',{auth:admin,method:'PUT',data:payload([one,await get('p-4')])})).status,400);
+  assert.equal((await req('/api/people/course',{auth:manager,method:'PUT',data:payload([one,two])})).value.updated,2);
+  const updated=await get(one.id);assert.equal(updated.data.communionYear,'3');assert.equal(updated.version,one.version+1);
+  assert.deepEqual({...updated.data,communionYear:one.data.communionYear},one.data);assert.equal(updated.groupId,one.groupId);
+  assert.equal((await req('/api/people/course',{auth:manager,method:'PUT',data:payload([one,two])})).status,409);
+});
+
+spec('Borrar usuarios: solo admin, confirmación, versión, sesiones y conservación del historial',async({req,login,app})=>{
+ const admin=await login('admin'),manager=await login('ana'),reader=await login('consulta');
+ const u=(await req('/api/users',{auth:admin})).value.find(u=>u.username==='ana');
+ const path=`/api/users/${u.id}`,data={version:u.version,confirmation:u.username};
+ for(const auth of [manager,reader])assert.equal((await req(path,{auth,method:'DELETE',data})).status,403);
+ assert.equal((await req(path,{auth:admin,method:'DELETE',data:{...data,confirmation:u.name}})).status,400);
+ assert.equal((await req(path,{auth:admin,method:'DELETE',data:{...data,version:0}})).status,409);
+ const upload=await req('/api/people/p-1/documents',{auth:manager,method:'POST',data:{name:'test.pdf',base64:PDF,type:'birth',owner:'participant',version:1}});assert.equal(upload.status,201);
+ const event=await req('/api/calendar',{auth:manager,method:'POST',data:calendarSession()});assert.equal(event.status,201);
+ const before=app.store.get('SELECT count(*) n FROM people').n;
+ assert.equal((await req(path,{auth:admin,method:'DELETE',data})).status,200);
+ assert.equal((await req('/api/session',{auth:manager})).status,401);
+ assert.equal((await req('/api/login',{method:'POST',data:{username:'ana',password:DEMO_PASSWORD}})).status,401);
+ assert(!(await req('/api/users',{auth:admin})).value.some(x=>x.id===u.id));
+ assert.equal((await req(path,{auth:admin,method:'PUT',data:updateUser(u,{active:true,version:u.version+1})})).status,404);
+ assert.equal((await req(path,{auth:admin,method:'DELETE',data})).status,404);
+ assert.equal(app.store.get('SELECT count(*) n FROM people').n,before);
+ assert.equal((await req(`/api/files/${upload.value.id}`,{auth:admin})).status,200);
+ assert.equal(app.store.get('SELECT created_by FROM calendar_events WHERE id=?',event.value.events[0].id).created_by,u.id);
+ assert.equal(app.store.get('SELECT count(*) n FROM scopes WHERE user_id=?',u.id).n,0);
+ assert.equal(app.store.get("SELECT count(*) n FROM audit WHERE action='user.delete' AND entity_id=?",u.id).n,1);
+ const self=(await req('/api/users',{auth:admin})).value.find(x=>x.id===admin.user.id);
+ assert.equal((await req(`/api/users/${self.id}`,{auth:admin,method:'DELETE',data:{version:self.version,confirmation:self.username}})).status,409);
 });

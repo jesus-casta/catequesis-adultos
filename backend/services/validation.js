@@ -2,12 +2,12 @@ export class AppError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 export const fail = (status, message) => { throw new AppError(status, message); };
-export const ROLES = ['admin', 'catechist', 'reader'];
+export const ROLES = ['admin', 'manager', 'reader'];
 export const ITINERARIES = ['confirmation', 'baptism-1', 'baptism-2', 'first-communion'];
 export const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 export const DOC_TYPES = ['birth', 'baptism', 'sponsor-confirmation', 'registration'];
 export const OWNER_TYPES = ['participant', 'baptismSponsor', 'confirmationSponsor'];
-export const FIELDS = ['birthDate', 'birthPlace', 'phone', 'email', 'address', 'city', 'province', 'postalCode', 'country', 'baptism', 'communion', 'confirmation', 'communionYear', 'responsibleContact', 'father', 'fatherBirth', 'fatherPhone', 'fatherEmail', 'mother', 'motherBirth', 'motherPhone', 'motherEmail', 'otherGuardian', 'otherGuardianRelationship', 'otherGuardianPhone', 'otherGuardianEmail', 'paternalGrandfather', 'paternalGrandfatherBirth', 'paternalGrandmother', 'paternalGrandmotherBirth', 'maternalGrandfather', 'maternalGrandfatherBirth', 'maternalGrandmother', 'maternalGrandmotherBirth', 'baptismSponsor', 'confirmationSponsor', 'guardians', 'baptismParish', 'school'];
+export const FIELDS = ['birthDate', 'birthPlace', 'phone', 'email', 'address', 'city', 'province', 'postalCode', 'country', 'baptism', 'communion', 'confirmation', 'communionYear', 'responsibleContact', 'father', 'fatherBirth', 'fatherPhone', 'fatherEmail', 'mother', 'motherBirth', 'motherPhone', 'motherEmail', 'otherGuardian', 'otherGuardianRelationship', 'otherGuardianPhone', 'otherGuardianEmail', 'paternalGrandfather', 'paternalGrandfatherBirth', 'paternalGrandmother', 'paternalGrandmotherBirth', 'maternalGrandfather', 'maternalGrandfatherBirth', 'maternalGrandmother', 'maternalGrandmotherBirth', 'baptismSponsor', 'confirmationSponsor', 'guardians', 'baptismParish', 'school', 'parish'];
 export function object(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail(400, 'Se esperaba un objeto de datos.');
   return value;
