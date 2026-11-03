@@ -41,7 +41,7 @@ curl --fail https://gestioncatequesis.es/healthz
 
 Esta actualización no requiere restaurar la base para volver al código anterior. Restaurar la copia descartaría las modificaciones realizadas después de su creación.
 
-## Segunda entrega activa Compresión de imágenes
+## Segunda entrega Compresión de imágenes
 
 Se desplegó el commit `a5a2c38`, con 90 pruebas locales correctas. Solo se sustituyó `dist/client`, reutilizando la imagen de la primera entrega. Se conservaron el backend, sus dependencias, el entorno y el volumen de datos.
 
@@ -54,3 +54,16 @@ Se desplegó el commit `a5a2c38`, con 90 pruebas locales correctas. Solo se sust
 Se verificaron `/healthz` por HTTPS, la referencia al nuevo `index-DtGW8cbY.js` y su coincidencia por SHA-256 con el archivo compilado local. Los recuentos antes y después fueron iguales: 182 personas, 19 grupos, 8 usuarios y 2 archivos. No hubo cambios de esquema ni operaciones sobre registros. La recreación del contenedor duró aproximadamente 1,4 segundos.
 
 La prueba real desde una cámara móvil queda pendiente; las pruebas automatizadas cubren reducción proporcional, límites, conversión, compresión adicional y errores de codificación.
+
+## Tercera entrega activa Estructura completa y logotipo
+
+La impresión conserva todos los apartados del modelo, incluyendo las dos ramas de bautismo, los datos familiares, la protección de datos, la autorización, DNI y firma. Solo se rellenan los datos de la rama aplicable; la otra queda en blanco. Se incorporó el logotipo original extraído del documento aportado, sin recrearlo. El formulario de edición mantiene sus campos condicionales.
+
+- Imagen activa: `catequesis-adultos-adultos:print-layout-20261103`.
+- ID: `sha256:5ad240f7b9d0c650a71d0d81218740d686ef2c2f7f6b654a466b7f4d9707af2d`.
+- Entrega activa: `/home/ubuntu/releases/print-layout-20261103`.
+- Configuración adicional: `compose.release.json`; reversión a la segunda entrega: `compose.rollback.json`, ambas dentro de esa entrega y usando la misma base Compose.
+
+Se revisaron visualmente las dos páginas A4 en la vista de impresión de Safari con datos ficticios. Las entradas extensas pueden necesitar más páginas; no se recorta el contenido para forzarlo a caber. El botón de impresión espera a que cargue el logotipo. Pasaron lint, compilación, 23 pruebas de interfaz y 68 de servidor.
+
+Se verificaron por HTTPS `/healthz`, la interfaz `index-D4wEOLQS.js` y el logotipo publicado, comparando sus SHA-256 con los archivos locales. Recuentos conservados: 182 personas, 19 grupos, 8 usuarios y 2 archivos. Solo se actualizó la interfaz compilada y sus recursos.
