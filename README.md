@@ -29,7 +29,7 @@ La jerarquía es **Comunidad → Grupos → Catecúmenos**. Las comunidades tien
 
 La actualización desactiva una única vez las cuentas antiguas de catequistas y cierra sus sesiones, conservando sus nombres en los grupos. Los administradores y visualizadores conservan sus accesos. Administración crea los nuevos encargados y asigna sus grupos. Por compatibilidad con SQLite, el rol interno `catechist` representa al encargado; la API lo expone como `manager`.
 
-Las fichas se consultan y editan en una vista continua, sin pestañas. En niños aparecen madre, padre y un primer tutor vacío cuando no hay tutores. Los contactos existentes se conservan. Los adultos tienen parroquia en lugar de colegio. Fotos JPG/PNG de hasta 2 MB; documentos PDF/JPG/PNG de hasta 5 MB.
+Las fichas se consultan y editan en una vista continua, sin pestañas. En niños aparecen madre, padre y un primer tutor vacío cuando no hay tutores. Los contactos existentes se conservan. Los adultos tienen parroquia en lugar de colegio. Las imágenes de cámara o galería se comprimen en el navegador antes de subirlas: hasta 40 MB de entrada, fotos de hasta 1600 píxeles por lado y documentos en imagen de hasta 2400. Se guardan como JPG cuando necesitan conversión o reducción. Los límites del servidor siguen siendo 2 MB por foto y 5 MB por documento; los PDF no se comprimen. Si el navegador no puede abrir un HEIC/HEIF, hay que exportarlo como JPG desde Fotos.
 
 ## Datos y operación
 

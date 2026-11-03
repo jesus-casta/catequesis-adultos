@@ -1,0 +1,30 @@
+export const adultFamily = [['father','Padre'],['mother','Madre'],['paternalGrandfather','Abuelo paterno'],['paternalGrandmother','Abuela paterna'],['maternalGrandfather','Abuelo materno'],['maternalGrandmother','Abuela materna']];
+export function adultRegistrationFields(data={}) {
+  if(data.baptism==='no')return [...adultFamily.flatMap(([key,label])=>[[key,`${label}: nombre y apellidos`],[`${key}Birth`,`${label}: lugar de nacimiento`]]),['baptismSponsor','Padrino / madrina de bautismo'],['confirmationSponsor','Padrino / madrina de confirmación']];
+  if(data.baptism==='yes')return [['baptismParish','Parroquia de bautismo (localidad, provincia, arciprestazgo y diócesis)'],['parish','Parroquia actual (localidad, provincia, arciprestazgo y diócesis)'],['catechistName','Nombre del catequista'],['catechistPhone','Teléfono del catequista'],['confirmationSponsor','Padrino / madrina de confirmación']];
+  return [];
+}
+const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export function registrationHtml(person,group={},itinerary='') {
+ const d=person.data??{},value=v=>escape(v)||'________________________',line=(label,v)=>`<div class="field"><b>${escape(label)}:</b> ${value(v)}</div>`;
+ const personal=[['birthDate','Fecha de nacimiento'],['birthPlace','Lugar de nacimiento'],['address','Dirección'],['city','Ciudad'],['province','Provincia'],['postalCode','Código postal'],['country','País'],['phone','Teléfono'],['email','Email']];
+ return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Ficha de inscripción · ${escape(person.firstName)} ${escape(person.lastName)}</title><style>@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#000;max-width:180mm;margin:20px auto}h1{font-size:20pt}h2{font-size:13pt;margin:20px 0 12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px}.field{overflow-wrap:anywhere;break-inside:avoid;line-height:1.5}.legal{break-before:page;font-size:10pt;line-height:1.5}.signature{margin-top:30px;min-height:80px}button{padding:10px;margin-bottom:15px}@media print{button{display:none}body{margin:0;max-width:none}}</style></head><body><button id="print-registration">Imprimir / Guardar como PDF</button><h1>FICHA DE INSCRIPCIÓN</h1>${line('Itinerario',itinerary)}${line('Grupo',group.name)}<h2>INFORMACIÓN PERSONAL</h2><div class="grid">${line('Nombre',person.firstName)}${line('Apellidos',person.lastName)}${personal.map(([k,l])=>line(l,k==='birthDate'&&/^\d{4}-\d{2}-\d{2}$/.test(d[k])?d[k].split('-').reverse().join('/'):d[k])).join('')}</div><h2>INFORMACIÓN IMPORTANTE</h2>${line('¿Estás bautizado?',{yes:'Sí',no:'No',unknown:'Sin indicar'}[d.baptism]??'Sin indicar')}${d.baptism==='yes'?'<p><b>IMPORTANTE: Imprescindible adjuntar la Partida de Bautismo.</b></p>':''}<div class="grid">${adultRegistrationFields(d).map(([k,l])=>line(l,d[k]||(k==='catechistName'?group.catechistName:''))).join('')}</div>${d.baptism!=='yes'&&d.baptism!=='no'?'<p>Situación de bautismo pendiente de indicar.</p>':''}<section class="legal"><h2>PROTECCIÓN DE DATOS</h2>${privacyParagraphs.map(p=>`<p>${escape(p)}</p>`).join('')}<p>☐ ACEPTO LA POLÍTICA DE PROTECCIÓN DE DATOS Y LAS CONDICIONES ARRIBA INDICADAS.</p><p>DNI: ______________________________</p><div class="signature">FIRMA: ______________________________<p>Fecha: ______________________________</p></div></section></body></html>`;
+}
+// Texto transcrito del modelo aportado por la parroquia. La autorización se firma en papel.
+const privacyParagraphs = [
+ 'LA VICARIA EPISCOPAL DE PASTORAL DEL ARZOBISPADO DE OVIEDO ES RESPONSABLE DEL TRATAMIENTO DE LOS DATOS, CON LA FINALIDAD DE DESARROLLAR LAS ACTIVIDADES PROPIAS DEL CATECUMENADO DE ADULTOS, CON AMPARO EN EL CONSENTIMIENTO DADO MEDIANTE ESTE FORMULARIO Y MIENTRAS DURE LA FORMACIÓN EN LA FORMACIÓN DE LA PARROQUIA/DIÓCESIS O NO SE SOLICITE LA BAJA EN TALES ACTIVIDADES.',
+ 'PUEDEN EJERCITARSE LOS DERECHOS DE ACCESO, RECTIFICACIÓN, SUPRESIÓN, LIMITACIÓN, OPOSICIÓN, PORTABILIDAD, RETIRADA DEL CONSENTIMIENTO Y RECLAMAR ANTE LA AUTORIDAD EL CONTROL, ESCRIBIENDO A DPO@IGLESIADEASTURIAS.ORG O POR CORREO POSTAL A LA DIRECCIÓN QUE APARECE DEBAJO.',
+ 'RESPONSABLE: VICARÍA EPISCOPAL DE PASTORAL, ILMO. SR. D. ANTONIO VÁZQUEZ ESCOBAR. ARZOBISPADO DE OVIEDO, CORRADA DEL OBISPO, 33003, OVIEDO. 628511787. CATECUMENADOASTURIAS@GMAIL.COM',
+ 'FINALIDAD PRINCIPAL: GESTIÓN DEL CATECUMENADO ORGANIZADO POR LA DIÓCESIS / UNIDAD PASTORAL. SUS DATOS PERSONALES SE CONSERVARÁN MIENTRAS NO SE REVOQUE SU CONSENTIMIENTO.',
+ 'LEGITIMACIÓN: CONSENTIMIENTO PARA PARTICIPAR PLENAMENTE EN EL CATECUMENADO DE ADULTOS Y LO QUE CONLLLEVA.',
+ 'DESTINATARIOS: VICARÍA EPISCOPAL DE PASTORAL DEL ARZOBISPADO DE OVIEDO. SE COMUNICARÁN SUS DATOS A LA VICARÍA / PARROQUIA EN LA QUE SE VAYA A REALIZAR LA ACTIVIDAD.',
+ 'DERECHOS: PUEDE EJERCITAR SU DERECHO A REVOCAR SU CONSENTIMIENTO PARA EL TRATAMIENTO DE SUS DATOS, ASÍ COMO SOLICITAR EL ACCESO, RECTIFICACIÓN, SUPRESIÓN, LIMITACIÓN, PORTABILIDAD U OPOSICIÓN DE LOS MISMOS MANDANDO UN EMAIL A DPO@IGLESIADEASTURIAS.ORG. TAMBIÉN PODRÁ PRESENTAR UNA RECLAMACIÓN MISMOS, REMITIENDO UNA COMUNICACIÓN POR ESCRITO A LA PARROQUIA A LA QUE PERTENECE O ANTE LA AGENCIA ESPAÑOLA DE PROTECCIÓN DE DATOS SI NO OBTIENE SATISFACCIÓN EN EL EJERCICIO DE SUS DERECHOS.',
+ '* AUTORIZACIÓN (RODEE SU RESPUESTA). MARCANDO ESTA CASILLA, UD. ACEPTA EL USO DE SUS DATOS PERSONALES PARA TODOS LOS FINES DETALLADOS CON ANTERIORIDAD, SALVO EN AQUELLOS EN QUE INDIQUE EXPRESAMENTE LO CONTRARIO MARCANDO LA CASILLA CORRESPONDIENTE.'
+];
+export function printRegistration(person,group,itinerary) {
+ const popup=window.open('','_blank');
+ if(!popup)throw new Error('Permite las ventanas emergentes para abrir la ficha imprimible.');
+ popup.opener=null;
+ popup.document.open();popup.document.write(registrationHtml(person,group,itinerary));popup.document.close();
+ popup.document.getElementById('print-registration').addEventListener('click',()=>{popup.focus();popup.print();});
+}
